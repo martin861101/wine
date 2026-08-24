@@ -111,6 +111,13 @@ async function requireUserId(): Promise<string> {
   return String(data);
 }
 
+function storagePathFromPublicUrl(url: string | null | undefined, bucket: string): string | null {
+  if (!url) return null;
+  const marker = `/storage/v1/object/public/${bucket}/`;
+  const index = url.indexOf(marker);
+  return index === -1 ? null : decodeURIComponent(url.slice(index + marker.length));
+}
+
 function browserOrigin(): string {
   return typeof window === "undefined" ? "https://wineandchapters.co.za" : window.location.origin;
 }
@@ -778,6 +785,16 @@ export interface AdminContent {
     memberName: string;
     createdAt: string;
   }>;
+  discussions: Array<{
+    id: string;
+    title: string;
+    body: string;
+    memberName: string;
+    createdAt: string;
+    commentCount: number;
+    deletedAt: string | null;
+    deletionReason: string | null;
+  }>;
   polls: Array<{
     id: string;
     title: string;
@@ -1093,6 +1110,54 @@ export const adminApi = {
       .update({ progress_percent: progressPercent, updated_at: new Date().toISOString() })
       .eq("status", "CURRENT");
     if (error) throwApiError(error, "Reading progress could not be updated.");
+  },
+
+  async updateBookCover(
+    bookId: string,
+    input: { image?: File; remove?: boolean; previousUrl?: string | null },
+  ): Promise<string | null> {
+    if (!input.image && !input.remove) return input.previousUrl ?? null;
+    let uploadedPath: string | null = null;
+    let coverUrl: string | null = input.remove ? null : (input.previousUrl ?? null);
+    if (input.image) {
+      const allowed = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+      if (!allowed.includes(input.image.type))
+        throw new ApiError("Choose a JPG, PNG, WebP, or GIF book cover.");
+      if (input.image.size > 8 * 1024 * 1024)
+        throw new ApiError("The book cover must be smaller than 8 MB.");
+      const extension =
+        input.image.name
+          .split(".")
+          .pop()
+          ?.replace(/[^a-z0-9]/gi, "") || "jpg";
+      uploadedPath = `books/${bookId}/${crypto.randomUUID()}.${extension}`;
+      const { error: uploadError } = await supabase.storage
+        .from("review-images")
+        .upload(uploadedPath, input.image, { contentType: input.image.type, upsert: false });
+      if (uploadError) throwApiError(uploadError, "The book cover could not be uploaded.");
+      coverUrl = supabase.storage.from("review-images").getPublicUrl(uploadedPath).data.publicUrl;
+    }
+    const { error } = await supabase.from("books").update({ cover_url: coverUrl }).eq("id", bookId);
+    if (error) {
+      if (uploadedPath) await supabase.storage.from("review-images").remove([uploadedPath]);
+      throwApiError(error, "The book cover could not be saved.");
+    }
+    const previousPath = storagePathFromPublicUrl(input.previousUrl, "review-images");
+    if (previousPath && previousPath !== uploadedPath)
+      await supabase.storage.from("review-images").remove([previousPath]);
+    return coverUrl;
+  },
+
+  async moderateDiscussion(
+    threadId: string,
+    input: { action: "remove" | "restore"; reason?: string },
+  ) {
+    const { error } = await supabase.rpc("admin_moderate_discussion", {
+      selected_thread_id: threadId,
+      moderation_action: input.action,
+      moderation_reason: input.reason?.trim() || null,
+    });
+    if (error) throwApiError(error, "The post could not be moderated.");
   },
 
   async createAnnouncement(input: {

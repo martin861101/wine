@@ -99,10 +99,12 @@ function AdminDashboard() {
     bookId: "",
     title: "",
     author: "",
-    coverUrl: "",
     startDate: "",
     endDate: "",
   });
+  const [readCoverImage, setReadCoverImage] = useState<File | null>(null);
+  const [existingReadCover, setExistingReadCover] = useState<string | null>(null);
+  const [removeReadCover, setRemoveReadCover] = useState(false);
   const [progress, setProgress] = useState(0);
 
   useEffect(() => {
@@ -191,24 +193,35 @@ function AdminDashboard() {
   const readMutation = useMutation({
     mutationFn: async () => {
       let bookId = read.bookId;
+      let previousUrl = existingReadCover;
       if (read.title.trim()) {
         const imported = await adminApi.importBook({
           externalProvider: "manual",
           externalId: `manual-${read.title.toLowerCase().replace(/[^a-z0-9]+/g, "-")}-${Date.now()}`,
           title: read.title.trim(),
           author: read.author.trim() || "Unknown author",
-          coverUrl: read.coverUrl.trim() || undefined,
           categories: [],
           metadata: { source: "admin" },
         });
         bookId = imported.databaseId;
+        previousUrl = null;
       }
       if (!bookId || !read.startDate || !read.endDate)
         throw new Error("Choose a book and reading dates.");
+      if (readCoverImage || removeReadCover) {
+        await adminApi.updateBookCover(bookId, {
+          remove: removeReadCover,
+          previousUrl,
+          ...(readCoverImage ? { image: readCoverImage } : {}),
+        });
+      }
       return adminApi.setCurrentRead({ bookId, startDate: read.startDate, endDate: read.endDate });
     },
     onSuccess: () => {
-      setRead((old) => ({ ...old, title: "", author: "", coverUrl: "" }));
+      setRead((old) => ({ ...old, title: "", author: "" }));
+      setReadCoverImage(null);
+      setExistingReadCover(null);
+      setRemoveReadCover(false);
       invalidate();
       toast.success("Current monthly read updated.");
     },
@@ -376,7 +389,13 @@ function AdminDashboard() {
               <form onSubmit={submitRead} className="mt-6 space-y-4">
                 <select
                   value={read.bookId}
-                  onChange={(event) => setRead((old) => ({ ...old, bookId: event.target.value }))}
+                  onChange={(event) => {
+                    const selected = data.books.find((book) => book.id === event.target.value);
+                    setRead((old) => ({ ...old, bookId: event.target.value }));
+                    setExistingReadCover(selected?.coverUrl ?? null);
+                    setReadCoverImage(null);
+                    setRemoveReadCover(false);
+                  }}
                   className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
                   aria-label="Existing book"
                 >
@@ -400,12 +419,67 @@ function AdminDashboard() {
                     placeholder="Author"
                   />
                 </div>
-                <Input
-                  value={read.coverUrl}
-                  onChange={(event) => setRead((old) => ({ ...old, coverUrl: event.target.value }))}
-                  placeholder="Cover image URL (optional)"
-                  type="url"
-                />
+                <div className="rounded-3xl border border-dashed border-border bg-background/60 p-4">
+                  {readCoverImage || (existingReadCover && !removeReadCover) ? (
+                    <img
+                      src={
+                        readCoverImage ? URL.createObjectURL(readCoverImage) : existingReadCover!
+                      }
+                      alt="Book cover preview"
+                      className="mb-4 h-48 w-32 rounded-2xl object-cover shadow-soft"
+                    />
+                  ) : null}
+                  <label className="flex cursor-pointer items-center gap-3 text-sm">
+                    <ImagePlus className="h-5 w-5 text-primary" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <span className="block font-medium">
+                        {existingReadCover ? "Replace book cover" : "Upload a book cover"}
+                      </span>
+                      <span className="block text-xs text-muted-foreground">
+                        {readCoverImage?.name ?? "JPG, PNG, WebP or GIF · maximum 8 MB"}
+                      </span>
+                    </span>
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp,image/gif"
+                      className="sr-only"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        if (
+                          file &&
+                          !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(
+                            file.type,
+                          )
+                        ) {
+                          toast.error("Choose a JPG, PNG, WebP, or GIF book cover.");
+                          event.target.value = "";
+                          return;
+                        }
+                        if (file && file.size > 8 * 1024 * 1024) {
+                          toast.error("The book cover must be smaller than 8 MB.");
+                          event.target.value = "";
+                          return;
+                        }
+                        setReadCoverImage(file);
+                        setRemoveReadCover(false);
+                      }}
+                    />
+                  </label>
+                  {readCoverImage || existingReadCover ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      className="mt-3"
+                      onClick={() => {
+                        setReadCoverImage(null);
+                        setRemoveReadCover(true);
+                      }}
+                    >
+                      Remove cover
+                    </Button>
+                  ) : null}
+                </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <Input
                     value={read.startDate}
@@ -427,7 +501,11 @@ function AdminDashboard() {
                   />
                 </div>
                 <Button type="submit" variant="hero" disabled={readMutation.isPending}>
-                  {readMutation.isPending ? "Updating…" : "Set current read"}
+                  {readMutation.isPending
+                    ? readCoverImage
+                      ? "Uploading cover…"
+                      : "Updating…"
+                    : "Set current read"}
                 </Button>
               </form>
               <form onSubmit={submitProgress} className="mt-8 border-t border-border/60 pt-6">
@@ -768,10 +846,12 @@ function AdminModeration() {
   const queryClient = useQueryClient();
   const content = useQuery({ queryKey: ["admin-content"], queryFn: adminApi.getContent });
   const [poll, setPoll] = useState({ title: "", options: "", endsAt: "", hideResults: true });
+  const [moderationReason, setModerationReason] = useState("");
   const refresh = () => {
     void queryClient.invalidateQueries({ queryKey: ["admin-content"] });
     void queryClient.invalidateQueries({ queryKey: ["published-reviews"] });
     void queryClient.invalidateQueries({ queryKey: ["widget-home"] });
+    void queryClient.invalidateQueries({ queryKey: ["discussions"] });
   };
   const reviewStatus = useMutation({
     mutationFn: ({ id, status }: { id: string; status: "PENDING" | "PUBLISHED" | "HIDDEN" }) =>
@@ -794,6 +874,22 @@ function AdminModeration() {
       refresh();
       toast.success("Comment removed.");
     },
+  });
+  const moderateDiscussion = useMutation({
+    mutationFn: ({ id, action }: { id: string; action: "remove" | "restore" }) =>
+      adminApi.moderateDiscussion(id, {
+        action,
+        ...(action === "remove" ? { reason: moderationReason } : {}),
+      }),
+    onSuccess: (_data, variables) => {
+      setModerationReason("");
+      refresh();
+      toast.success(
+        variables.action === "remove" ? "Post removed from the Reading Room." : "Post restored.",
+      );
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "The post could not be moderated."),
   });
   const suggestionStatus = useMutation({
     mutationFn: ({
@@ -926,6 +1022,100 @@ function AdminModeration() {
                 </AlertDialog>
               </div>
             ))}
+          </div>
+        </CardContent>
+      </Card>
+      <Card className="rounded-4xl border-border/60 bg-card/80 lg:col-span-2">
+        <CardContent className="p-7">
+          <p className="eyebrow">Reading Room posts</p>
+          <h2 className="mt-2 font-display text-2xl">Member post moderation</h2>
+          <p className="mt-2 text-sm text-muted-foreground">
+            Removed posts and their comments are hidden from members. You can restore a post if it
+            was removed accidentally.
+          </p>
+          <div className="mt-5 max-h-[32rem] space-y-3 overflow-y-auto">
+            {data.discussions.map((discussion) => (
+              <div key={discussion.id} className="rounded-2xl bg-accent/40 p-4">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="font-medium">{discussion.title}</p>
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {discussion.memberName} ·{" "}
+                      {new Date(discussion.createdAt).toLocaleDateString()} ·{" "}
+                      {discussion.commentCount}{" "}
+                      {discussion.commentCount === 1 ? "comment" : "comments"}
+                    </p>
+                  </div>
+                  <Badge>{discussion.deletedAt ? "removed" : "visible"}</Badge>
+                </div>
+                <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
+                  {discussion.body}
+                </p>
+                {discussion.deletedAt ? (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="mt-4"
+                    disabled={moderateDiscussion.isPending}
+                    onClick={() =>
+                      moderateDiscussion.mutate({ id: discussion.id, action: "restore" })
+                    }
+                  >
+                    {moderateDiscussion.isPending ? "Saving…" : "Restore post"}
+                  </Button>
+                ) : (
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        className="mt-4"
+                        disabled={moderateDiscussion.isPending}
+                      >
+                        Remove post
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Remove “{discussion.title}”?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          The post and its comments will be hidden from the Reading Room. This can
+                          be restored later.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <label className="grid gap-2 text-sm font-medium">
+                        Moderation reason{" "}
+                        <span className="font-normal text-muted-foreground">
+                          (optional, never public)
+                        </span>
+                        <Textarea
+                          value={moderationReason}
+                          onChange={(event) => setModerationReason(event.target.value)}
+                          maxLength={500}
+                          placeholder="Optional internal note"
+                        />
+                      </label>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Keep post</AlertDialogCancel>
+                        <AlertDialogAction
+                          disabled={moderateDiscussion.isPending}
+                          onClick={() =>
+                            moderateDiscussion.mutate({ id: discussion.id, action: "remove" })
+                          }
+                        >
+                          {moderateDiscussion.isPending ? "Removing…" : "Remove post"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                )}
+              </div>
+            ))}
+            {!data.discussions.length ? (
+              <p className="rounded-2xl bg-accent/40 p-4 text-sm text-muted-foreground">
+                No Reading Room posts yet.
+              </p>
+            ) : null}
           </div>
         </CardContent>
       </Card>

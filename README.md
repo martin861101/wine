@@ -27,6 +27,7 @@ Wine & Chapters is the web home of a community-led book club. The public site in
 - **Public experience:** current reads, an interactive upcoming-events calendar, early review participation, member perspectives, the club story, a Shop preview, contact, and newsletter signup.
 - **Member clubhouse:** book suggestions, voting, discussions, reviews, event RSVPs, community activity, and an AI reading companion.
 - **Admin workspace:** member approval, book and event management, moderation, current-read selection, and email broadcasts.
+- **Admin media and moderation:** book-review covers are uploaded to the admin-only `review-images` Storage bucket (external legacy cover URLs still work), and Reading Room posts can be soft-removed or restored without deleting their comments.
 - **Book discovery:** Open Library metadata, Tavily-powered current research, and a safe server-side webpage reader.
 - **Books AI memory and actions:** owner-isolated Supabase conversations survive refresh/reopen, while a validated tool registry lets Gemini combine persisted context with live club data, book research, safe navigation, themed previews, and member-facing actions.
 - **Payments:** optional Paystack contributions through server-side checkout and a signed webhook.
@@ -124,6 +125,10 @@ Never expose a service-role key, database password, SMTP password, Gemini key, o
 | `npm run deploy:supabase` | Validate and deploy the Supabase backend            |
 
 ## Deployment
+
+### Supabase migration notes
+
+Apply the pending migrations before deploying the UI. The review-cover migration creates the public `review-images` bucket with an 8 MB JPG/PNG/WebP/GIF limit and admin-only write/delete policies. It also adds soft-delete metadata to Reading Room posts, filters member post/comment reads, and adds the admin-only `admin_moderate_discussion` RPC used by the dashboard.
 
 ### Frontend
 
