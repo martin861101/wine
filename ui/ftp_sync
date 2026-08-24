@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+deploy_script_dir="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+deploy_source_dir="$deploy_script_dir/dist"
+deploy_target_dir="/public_html/"
+
+for required_command in npm lftp; do
+  if ! command -v "$required_command" >/dev/null 2>&1; then
+    echo "Deployment aborted: '$required_command' is not installed." >&2
+    exit 1
+  fi
+done
+
+for required_variable in FTP_USER FTP_PASS; do
+  if [[ -z "${!required_variable:-}" ]]; then
+    echo "Deployment aborted: $required_variable is not set." >&2
+    exit 1
+  fi
+done
+
+echo "Building the static UI from $deploy_script_dir..."
+cd "$deploy_script_dir"
+npm run build
+
+for required_file in index.html .htaccess; do
+  if [[ ! -s "$deploy_source_dir/$required_file" ]]; then
+    echo "Deployment aborted: $deploy_source_dir/$required_file is missing or empty." >&2
+    exit 1
+  fi
+done
+
+if [[ ! -d "$deploy_source_dir/assets" ]]; then
+  echo "Deployment aborted: $deploy_source_dir/assets is missing." >&2
+  exit 1
+fi
+
+echo "Uploading the contents of $deploy_source_dir to $deploy_target_dir..."
+lftp -u "$FTP_USER,$FTP_PASS" ftp://wineandchapters.co.za -e "
+set cmd:fail-exit yes
+set ftp:list-options -a
+mirror --reverse --delete --verbose '$deploy_source_dir/' '$deploy_target_dir'
+cls -la '${deploy_target_dir}index.html'
+cls -la '${deploy_target_dir}.htaccess'
+bye
+"
+
+echo "Deployment complete: the remote index.html and .htaccess are present."

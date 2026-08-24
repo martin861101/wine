@@ -1,0 +1,284 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Wine &amp; Chapters · Coming Soon</title>
+<meta name="description" content="Wine &amp; Chapters — a women's book club for slow evenings, good wine and better stories. Launching soon." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..800;1,400..700&family=Inter:wght@300..700&display=swap"
+  rel="stylesheet"
+/>
+<style>
+  /* Wine & Chapters design system — blush, cream, beige, sage, gold, wine. */
+  :root {
+    --radius: 1rem;
+    --background: oklch(0.98 0.011 78);
+    --foreground: oklch(0.29 0.032 40);
+    --card: oklch(0.995 0.005 90);
+    --muted: oklch(0.95 0.018 70);
+    --muted-foreground: oklch(0.52 0.028 45);
+    --primary: oklch(0.39 0.113 15);
+    --border: oklch(0.9 0.02 60);
+    --blush: oklch(0.9 0.045 16);
+    --cream: oklch(0.975 0.018 85);
+    --beige: oklch(0.93 0.028 75);
+    --sage: oklch(0.78 0.043 145);
+    --gold: oklch(0.76 0.1 78);
+    --shadow-soft: 0 1px 2px oklch(0.29 0.032 40 / 0.04), 0 12px 32px -12px oklch(0.39 0.113 15 / 0.16);
+    --shadow-lift: 0 2px 6px oklch(0.29 0.032 40 / 0.05), 0 28px 60px -24px oklch(0.39 0.113 15 / 0.26);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body { min-height: 100%; }
+
+  body {
+    font-family: "Inter", ui-sans-serif, system-ui, sans-serif;
+    color: var(--foreground);
+    background-color: var(--background);
+    -webkit-font-smoothing: antialiased;
+    background-image: linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--blush) 40%, transparent),
+      color-mix(in oklab, var(--cream) 78%, transparent) 55%,
+      color-mix(in oklab, var(--sage) 24%, transparent)
+    );
+    background-attachment: fixed;
+    overflow-x: hidden;
+  }
+
+  h1, .font-display {
+    font-family: "Playfair Display", ui-serif, Georgia, serif;
+  }
+
+  .vine {
+    position: fixed;
+    z-index: 0;
+    pointer-events: none;
+    opacity: 0.16;
+  }
+  .vine-left { left: -40px; bottom: -40px; width: 320px; transform: rotate(160deg); }
+  .vine-right { right: -40px; top: -30px; width: 260px; transform: rotate(-20deg); }
+
+  .content {
+    position: relative;
+    z-index: 1;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 3rem 1.5rem;
+  }
+
+  .card {
+    width: 100%;
+    max-width: 40rem;
+    border-radius: 2.5rem;
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    background: color-mix(in oklab, var(--card) 76%, transparent);
+    backdrop-filter: blur(18px) saturate(140%);
+    box-shadow: var(--shadow-lift);
+    padding: clamp(2.5rem, 7vw, 4.5rem) clamp(1.5rem, 6vw, 4rem);
+  }
+
+  .logo {
+    width: clamp(5rem, 12vw, 6.5rem);
+    height: clamp(5rem, 12vw, 6.5rem);
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid color-mix(in oklab, var(--gold) 70%, transparent);
+    box-shadow: 0 0.8rem 1.5rem -0.9rem color-mix(in oklab, black 45%, transparent);
+    animation: logo-float 6s ease-in-out infinite;
+  }
+
+  @keyframes logo-float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-8px); }
+  }
+
+  .brand {
+    margin-top: 1.5rem;
+    font-family: "Playfair Display", ui-serif, Georgia, serif;
+    font-size: clamp(2rem, 6vw, 2.9rem);
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    line-height: 1.1;
+    color: var(--foreground);
+  }
+  .brand .amp {
+    font-style: italic;
+    font-weight: 400;
+    color: var(--primary);
+  }
+
+  .eyebrow {
+    margin-top: 1.5rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    color: color-mix(in oklab, var(--primary) 80%, var(--foreground));
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .eyebrow::before,
+  .eyebrow::after {
+    content: "";
+    height: 1px;
+    width: 2rem;
+    background: linear-gradient(90deg, transparent, var(--gold));
+  }
+  .eyebrow::after {
+    background: linear-gradient(90deg, var(--gold), transparent);
+  }
+
+  .subtitle {
+    margin-top: 1.25rem;
+    max-width: 28rem;
+    margin-inline: auto;
+    color: var(--muted-foreground);
+    font-size: 1rem;
+    line-height: 1.7;
+  }
+
+  .divider {
+    width: 2.5rem;
+    height: 2px;
+    margin: 2.25rem auto;
+    border-radius: 999px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+  }
+
+  .countdown {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    flex-wrap: wrap;
+  }
+  .countdown .cell {
+    min-width: 5.25rem;
+    padding: 1rem 0.5rem;
+    border-radius: 1.25rem;
+    border: 1px solid color-mix(in oklab, var(--border) 80%, transparent);
+    background: color-mix(in oklab, var(--cream) 80%, white);
+    box-shadow: var(--shadow-soft);
+  }
+  .countdown .num {
+    font-family: "Playfair Display", ui-serif, Georgia, serif;
+    font-size: 1.9rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--primary);
+    line-height: 1;
+  }
+  .countdown .label {
+    display: block;
+    margin-top: 0.4rem;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  .card {
+    animation: fadeUp 1s var(--ease-out) both;
+  }
+
+  footer {
+    position: absolute;
+    bottom: 1.5rem;
+    width: 100%;
+    text-align: center;
+    color: var(--muted-foreground);
+    font-size: 0.8rem;
+    opacity: 0.85;
+  }
+  footer .sep { margin: 0 0.5rem; color: var(--gold); }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(24px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: 0.01ms !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
+</style>
+</head>
+<body>
+
+  <svg class="vine vine-left" viewBox="0 0 200 200" fill="none" aria-hidden="true">
+    <path d="M40 200 C60 160 30 120 70 90 C100 68 90 40 110 10" stroke="var(--sage)" stroke-width="3" stroke-linecap="round"/>
+    <ellipse cx="70" cy="90" rx="10" ry="16" fill="var(--sage)" transform="rotate(30 70 90)"/>
+    <ellipse cx="96" cy="60" rx="9" ry="14" fill="var(--sage)" transform="rotate(-20 96 60)"/>
+    <ellipse cx="46" cy="150" rx="10" ry="15" fill="var(--sage)" transform="rotate(-35 46 150)"/>
+    <circle cx="110" cy="10" r="6" fill="var(--gold)"/>
+  </svg>
+  <svg class="vine vine-right" viewBox="0 0 200 200" fill="none" aria-hidden="true">
+    <path d="M150 0 C130 40 165 80 130 110 C95 132 110 165 90 200" stroke="var(--sage)" stroke-width="3" stroke-linecap="round"/>
+    <ellipse cx="130" cy="110" rx="10" ry="16" fill="var(--sage)" transform="rotate(35 130 110)"/>
+    <ellipse cx="118" cy="150" rx="9" ry="14" fill="var(--sage)" transform="rotate(-20 118 150)"/>
+    <ellipse cx="146" cy="55" rx="10" ry="15" fill="var(--sage)" transform="rotate(25 146 55)"/>
+    <circle cx="90" cy="200" r="6" fill="var(--gold)"/>
+  </svg>
+
+  <main class="content">
+    <section class="card">
+      <img class="logo" src="logo.png" alt="Wine &amp; Chapters logo" />
+      <h1 class="brand">Wine <span class="amp">&amp;</span> Chapters</h1>
+
+      <p class="eyebrow">Launching soon</p>
+
+      <p class="subtitle">
+        A women's book club for slow evenings, good wine and better stories.
+        We're pouring the final glass — the chapter is nearly ready to open.
+      </p>
+
+      <div class="divider"></div>
+
+      <div class="countdown" id="countdown">
+        <div class="cell"><div class="num" id="days">00</div><span class="label">Days</span></div>
+        <div class="cell"><div class="num" id="hours">00</div><span class="label">Hours</span></div>
+        <div class="cell"><div class="num" id="minutes">00</div><span class="label">Minutes</span></div>
+        <div class="cell"><div class="num" id="seconds">00</div><span class="label">Seconds</span></div>
+      </div>
+    </section>
+
+    <footer>&copy; <span id="year"></span> Wine &amp; Chapters <span class="sep">·</span> Johannesburg, South Africa</footer>
+  </main>
+
+<script>
+  (function () {
+    document.getElementById("year").textContent = new Date().getFullYear();
+
+    var target = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+    function pad(n) { return n < 10 ? "0" + n : String(n); }
+
+    function tick() {
+      var diff = target - Date.now();
+      if (diff < 0) { diff = 0; }
+      var s = Math.floor(diff / 1000);
+      document.getElementById("days").textContent = pad(Math.floor(s / 86400));
+      document.getElementById("hours").textContent = pad(Math.floor(s % 86400 / 3600));
+      document.getElementById("minutes").textContent = pad(Math.floor(s % 3600 / 60));
+      document.getElementById("seconds").textContent = pad(s % 60);
+    }
+    tick();
+    setInterval(tick, 1000);
+  })();
+</script>
+
+</body>
+</html>

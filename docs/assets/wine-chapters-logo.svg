@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="260" viewBox="0 0 960 260" role="img" aria-labelledby="title description">
+  <title id="title">Wine and Chapters</title>
+  <desc id="description">An open book and wine glass emblem beside the Wine and Chapters name.</desc>
+  <defs>
+    <linearGradient id="wine" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#983E50"/>
+      <stop offset="1" stop-color="#681D31"/>
+    </linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFF9EE"/>
+      <stop offset="1" stop-color="#F4E2C5"/>
+    </linearGradient>
+  </defs>
+
+  <g transform="translate(18 18)">
+    <rect width="224" height="224" rx="58" fill="url(#wine)"/>
+    <circle cx="112" cy="112" r="91" fill="none" stroke="#D8B66A" stroke-width="2" opacity=".75"/>
+
+    <path d="M43 76c25-7 47-2 69 14v84c-21-16-44-21-69-14V76Z" fill="url(#paper)"/>
+    <path d="M181 76c-25-7-47-2-69 14v84c21-16 44-21 69-14V76Z" fill="url(#paper)"/>
+    <path d="M112 91v83" fill="none" stroke="#C69847" stroke-width="3" stroke-linecap="round"/>
+    <path d="M51 88c20-3 37 1 51 11M51 103c20-3 37 1 51 11M51 118c20-3 37 1 51 11" fill="none" stroke="#D7B987" stroke-width="2" stroke-linecap="round"/>
+
+    <path d="M139 49h42c0 29-8 45-21 45s-21-16-21-45Z" fill="none" stroke="#FFF9EE" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M143 67h34c-2 16-8 23-17 23s-15-7-17-23Z" fill="#D8B66A" opacity=".9"/>
+    <path d="M160 94v31m-14 8h28" fill="none" stroke="#FFF9EE" stroke-width="5" stroke-linecap="round"/>
+  </g>
+
+  <g fill="#681D31">
+    <text x="276" y="116" font-family="Georgia, 'Times New Roman', serif" font-size="66" font-weight="700" letter-spacing="1">WINE &amp; CHAPTERS</text>
+    <text x="280" y="163" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="600" letter-spacing="7" fill="#9B7252">A COMMUNITY FOR READERS</text>
+  </g>
+  <path d="M280 190h596" stroke="#D8B66A" stroke-width="3" stroke-linecap="round"/>
+  <path d="M886 190h40" stroke="#681D31" stroke-width="3" stroke-linecap="round"/>
+</svg>

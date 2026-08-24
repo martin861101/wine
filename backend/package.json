@@ -1,0 +1,40 @@
+{
+  "name": "@wine-and-chapters/backend",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite dev --host 127.0.0.1",
+    "dev:public": "vite dev --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint": "eslint src tests vite.config.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test tests/*.test.ts",
+    "db:migrate": "tsx src/db/migrate.ts",
+    "db:seed": "tsx src/db/seed.ts",
+    "db:create-admin": "tsx src/db/create-admin.ts",
+    "deploy:supabase": "bash scripts/deploy-supabase.sh"
+  },
+  "dependencies": {
+    "@tanstack/react-router": "^1.170.18",
+    "@tanstack/react-start": "^1.168.32",
+    "dotenv": "^17.4.2",
+    "firebase-admin": "^14.2.0",
+    "pg": "^8.23.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "zod": "^3.24.2"
+  },
+  "devDependencies": {
+    "@types/node": "^22.16.5",
+    "@types/pg": "^8.21.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "eslint": "^9.32.0",
+    "tsx": "^4.23.12",
+    "typescript": "^5.8.3",
+    "vite": "^8.1.5",
+    "vite-tsconfig-paths": "^6.0.2"
+  }
+}
