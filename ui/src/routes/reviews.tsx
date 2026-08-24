@@ -101,10 +101,10 @@ function ChoiceScale({
             aria-label={`${label}: ${level} out of 5`}
             aria-pressed={value === level}
             className={cn(
-              "flex h-10 min-w-10 items-center justify-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors",
+              "flex h-10 min-w-10 items-center justify-center gap-1 rounded-full border px-3 text-xs font-medium transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
               value === level
-                ? "border-primary bg-primary text-primary-foreground"
-                : "border-border/70 bg-background hover:border-primary/50",
+                ? "border-primary bg-primary text-primary-foreground shadow-sm"
+                : "border-border/60 bg-card hover:border-primary/40 hover:bg-accent/50",
             )}
           >
             {level === 0 ? "None" : <Icon className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -447,7 +447,7 @@ export function ReviewLatestRead({ id = "write-review" }: { id?: string }) {
                       <Label htmlFor="review-format">Format</Label>
                       <select
                         id="review-format"
-                        className="mt-2 flex h-10 w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        className="mt-2 flex h-10 w-full rounded-xl border border-input bg-card px-3 py-2 text-sm shadow-sm outline-none transition-[border-color,box-shadow] duration-200 focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/20"
                         {...form.register("format")}
                       >
                         <option>Paperback</option>

@@ -28,7 +28,7 @@ Wine & Chapters is the web home of a community-led book club. The public site in
 - **Member clubhouse:** book suggestions, voting, discussions, reviews, event RSVPs, community activity, and an AI reading companion.
 - **Admin workspace:** member approval, book and event management, moderation, current-read selection, and email broadcasts.
 - **Book discovery:** Open Library metadata, Tavily-powered current research, and a safe server-side webpage reader.
-- **Books AI actions:** a validated Supabase tool registry lets Gemini combine live club context, structured books, current web research, book/audio discovery, safe navigation, themed previews, moods, toasts, effects, and an occasional session-limited prompt.
+- **Books AI memory and actions:** owner-isolated Supabase conversations survive refresh/reopen, while a validated tool registry lets Gemini combine persisted context with live club data, book research, safe navigation, themed previews, and member-facing actions.
 - **Payments:** optional Paystack contributions through server-side checkout and a signed webhook.
 - **Branded communication:** verification, recovery, contact, and broadcast email flows.
 - **Responsive editorial hero:** the homepage uses dedicated landscape and portrait artwork, an organic staged reveal, restrained depth/scroll motion, and accessible reduced-motion fallbacks. The primary actions lead to registration and the live monthly-read section.
@@ -178,6 +178,8 @@ Its model-facing function declarations use Gemini-compatible schema fields, whil
 - [Book discovery providers](docs/BOOK_DISCOVERY.md)
 - [Reading-room widget](docs/WINE_CHAPTERS_WIDGET.md)
 - [Books AI tool and UI action layer](docs/BOOKS_AI_TOOLS.md)
+- [Books AI conversation-memory diagnosis](BOOKS_MEMORY_DIAGNOSIS.md)
+- [Books chat widget and persistent-memory flow](docs/CHAT_WIDGET.md)
 - [Video integration](docs/VIDEO_INTEGRATION.md)
 
 ## Security

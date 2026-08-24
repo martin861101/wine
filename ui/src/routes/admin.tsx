@@ -327,7 +327,7 @@ function AdminDashboard() {
                       audience: event.target.value as typeof old.audience,
                     }))
                   }
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
                   aria-label="Email audience"
                 >
                   <option value="MEMBERS">Approved members</option>
@@ -377,7 +377,7 @@ function AdminDashboard() {
                 <select
                   value={read.bookId}
                   onChange={(event) => setRead((old) => ({ ...old, bookId: event.target.value }))}
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
                   aria-label="Existing book"
                 >
                   <option value="">Select an existing book or add one below</option>
@@ -594,7 +594,7 @@ function AdminDashboard() {
                   onChange={(e) =>
                     setEvent((old) => ({ ...old, status: e.target.value as typeof old.status }))
                   }
-                  className="h-10 rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 rounded-xl border border-input bg-card px-3 text-sm"
                   aria-label="Event status"
                 >
                   <option value="PUBLISHED">Publish now</option>
@@ -660,7 +660,7 @@ function AdminDashboard() {
                   onChange={(e) =>
                     setAnnouncement((old) => ({ ...old, type: e.target.value as typeof old.type }))
                   }
-                  className="h-10 w-full rounded-md border border-input bg-background px-3 text-sm"
+                  className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
                   aria-label="Announcement type"
                 >
                   <option value="GENERAL">General</option>

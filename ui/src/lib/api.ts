@@ -33,6 +33,16 @@ export interface RegisterInput {
 
 export class ApiError extends Error {}
 
+export class BooksChatError extends ApiError {
+  constructor(
+    message: string,
+    readonly conversationId: string,
+    readonly userMessageId: string,
+  ) {
+    super(message);
+  }
+}
+
 type UserRow = {
   id: string;
   email: string;
@@ -192,21 +202,119 @@ export const contactApi = {
 export const aiApi = {
   async chat(
     message: string,
-    history: Array<{ role: "assistant" | "user"; text: string }>,
-  ): Promise<{ reply: string; actions: AIAction[]; model: string }> {
+    conversationId: string | null,
+    requestId: string,
+  ): Promise<{
+    reply: string;
+    actions: AIAction[];
+    model: string;
+    conversationId: string;
+    userMessageId: string;
+    assistantMessageId: string;
+  }> {
     const { data, error } = await supabase.functions.invoke<{
       reply: string;
       actions?: unknown;
       model: string;
+      conversationId: string;
+      userMessageId: string;
+      assistantMessageId: string;
     }>("ai-chat", {
       body: {
         message,
-        history: history.slice(-8),
+        conversationId,
+        requestId,
       },
     });
-    if (error || !data)
+    if (error?.context instanceof Response) {
+      const payload = (await error.context
+        .clone()
+        .json()
+        .catch(() => null)) as {
+        message?: unknown;
+        conversationId?: unknown;
+        userMessageId?: unknown;
+      } | null;
+      if (
+        typeof payload?.conversationId === "string" &&
+        typeof payload.userMessageId === "string"
+      ) {
+        throw new BooksChatError(
+          typeof payload.message === "string"
+            ? payload.message
+            : "The reading-room assistant is unavailable.",
+          payload.conversationId,
+          payload.userMessageId,
+        );
+      }
+    }
+    if (error || !data) {
       return await throwFunctionError(error, "The reading-room assistant is unavailable.");
-    return { reply: data.reply, actions: parseAIActions(data.actions), model: data.model };
+    }
+    return {
+      reply: data.reply,
+      actions: parseAIActions(data.actions),
+      model: data.model,
+      conversationId: data.conversationId,
+      userMessageId: data.userMessageId,
+      assistantMessageId: data.assistantMessageId,
+    };
+  },
+
+  async restoreConversation(preferredConversationId: string | null): Promise<{
+    conversationId: string | null;
+    messages: Array<{
+      id: string;
+      role: "assistant" | "user";
+      text: string;
+      status: "pending" | "complete" | "failed";
+      requestId: string;
+    }>;
+  }> {
+    let conversation: { id: string } | null = null;
+    if (
+      preferredConversationId &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        preferredConversationId,
+      )
+    ) {
+      const { data, error } = await supabase
+        .from("ai_conversations")
+        .select("id")
+        .eq("id", preferredConversationId)
+        .maybeSingle();
+      if (error) throwApiError(error, "Your Books conversation could not be restored.");
+      conversation = data;
+    }
+    if (!conversation) {
+      const { data, error } = await supabase
+        .from("ai_conversations")
+        .select("id")
+        .order("last_message_at", { ascending: false })
+        .order("id", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (error) throwApiError(error, "Your Books conversation could not be restored.");
+      conversation = data;
+    }
+    if (!conversation) return { conversationId: null, messages: [] };
+
+    const { data, error } = await supabase
+      .from("ai_messages")
+      .select("id,role,content,status,request_id,sequence")
+      .eq("conversation_id", conversation.id)
+      .order("sequence", { ascending: true });
+    if (error) throwApiError(error, "Your Books messages could not be restored.");
+    return {
+      conversationId: conversation.id,
+      messages: (data ?? []).map((item) => ({
+        id: String(item.id),
+        role: item.role === "assistant" ? "assistant" : "user",
+        text: String(item.content),
+        status: item.status === "pending" || item.status === "failed" ? item.status : "complete",
+        requestId: String(item.request_id),
+      })),
+    };
   },
 };
 

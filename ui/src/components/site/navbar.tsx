@@ -20,32 +20,36 @@ export function Navbar() {
   const { isAuthenticated, user, logout } = useAuth();
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b border-border/60 surface-glass">
+    <header className="sticky top-0 z-50 w-full border-b border-border/50 surface-glass">
       <nav
         aria-label="Primary"
-        className="mx-auto flex h-20 w-full max-w-7xl items-center justify-between gap-4 px-5 sm:px-8"
+        className="mx-auto flex h-[4.75rem] w-full max-w-7xl items-center justify-between gap-4 px-5 sm:px-8"
       >
-        <Link to="/" className="flex items-center gap-2.5" aria-label={`${site.name} home`}>
+        <Link
+          to="/"
+          className="flex items-center gap-2.5 rounded-xl px-1 py-1 transition-colors hover:bg-accent/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          aria-label={`${site.name} home`}
+        >
           <img
             src="/img/wine-chapters-logo-2-transparent.png"
             alt=""
             width={96}
             height={64}
-            className="h-16 w-24 shrink-0 bg-transparent object-contain"
+            className="h-14 w-20 shrink-0 bg-transparent object-contain sm:h-16 sm:w-24"
           />
-          <span className="font-display text-lg leading-none tracking-tight">
+          <span className="font-display text-[1.05rem] leading-none tracking-tight sm:text-lg">
             Wine <span className="text-primary">&</span> Chapters
           </span>
         </Link>
 
-        <ul className="hidden items-center gap-1 lg:flex">
+        <ul className="hidden items-center gap-0.5 lg:flex">
           {links.map((link) => (
             <li key={link.to}>
               <Link
                 to={link.to}
-                activeProps={{ className: "text-primary bg-accent/60" }}
+                activeProps={{ className: "text-primary bg-accent" }}
                 inactiveProps={{ className: "text-muted-foreground" }}
-                className="rounded-full px-4 py-2 text-sm font-medium transition-colors hover:text-primary"
+                className="rounded-full px-3.5 py-2 text-sm font-medium transition-colors duration-200 hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 {link.label}
               </Link>
@@ -55,9 +59,9 @@ export function Navbar() {
             <li>
               <Link
                 to="/admin"
-                activeProps={{ className: "text-primary bg-accent/60" }}
+                activeProps={{ className: "text-primary bg-accent" }}
                 inactiveProps={{ className: "text-muted-foreground" }}
-                className="rounded-full px-4 py-2 text-sm font-medium transition-colors hover:text-primary"
+                className="rounded-full px-3.5 py-2 text-sm font-medium transition-colors duration-200 hover:bg-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
                 Admin
               </Link>

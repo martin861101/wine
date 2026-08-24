@@ -5,8 +5,8 @@ import { site } from "@/data/site";
 
 export function Footer() {
   return (
-    <footer className="mt-24 border-t border-border/60 gradient-soft">
-      <div className="mx-auto grid w-full max-w-7xl gap-10 px-5 py-14 sm:px-8 md:grid-cols-4">
+    <footer className="mt-16 border-t border-border/50 gradient-soft sm:mt-20">
+      <div className="mx-auto grid w-full max-w-7xl gap-10 px-5 py-12 sm:px-8 sm:py-14 md:grid-cols-4">
         <div className="md:col-span-2">
           <div className="flex items-center gap-2.5">
             <img
@@ -73,7 +73,7 @@ export function Footer() {
 
         <nav
           aria-label="Legal"
-          className="border-t border-border/60 pt-8 md:col-span-4 md:flex md:items-center md:justify-between md:gap-6"
+          className="border-t border-border/50 pt-8 md:col-span-4 md:flex md:items-center md:justify-between md:gap-6"
         >
           <h2 className="font-display text-base">Legal</h2>
           <ul className="mt-4 flex flex-wrap gap-x-5 gap-y-2 text-sm text-muted-foreground md:mt-0">
@@ -92,8 +92,8 @@ export function Footer() {
         </nav>
       </div>
 
-      <div className="border-t border-border/60">
-        <p className="mx-auto w-full max-w-7xl px-5 py-6 text-xs text-muted-foreground sm:px-8">
+      <div className="border-t border-border/50">
+        <p className="mx-auto w-full max-w-7xl px-5 py-5 text-xs leading-relaxed text-muted-foreground sm:px-8">
           © {new Date().getFullYear()} Wine & Chapters. Made with wine, patience and very long
           chapters.
         </p>

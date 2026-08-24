@@ -10,7 +10,7 @@ export function Section({
 }: { children: ReactNode; className?: string } & React.HTMLAttributes<HTMLElement>) {
   return (
     <section
-      className={cn("mx-auto w-full max-w-7xl px-5 py-16 sm:px-8 sm:py-24", className)}
+      className={cn("mx-auto w-full max-w-7xl px-5 py-14 sm:px-8 sm:py-20", className)}
       {...rest}
     >
       {children}
@@ -34,14 +34,16 @@ export function SectionHeading({
       {eyebrow ? <p className="eyebrow eyebrow-accent">{eyebrow}</p> : null}
       <h2
         className={cn(
-          "text-3xl leading-tight tracking-tight sm:text-4xl break-words",
-          eyebrow ? "mt-5" : "mt-3",
+          "font-display text-3xl leading-[1.08] tracking-tight sm:text-4xl break-words",
+          eyebrow ? "mt-4" : "mt-3",
         )}
       >
         {title}
       </h2>
       {description ? (
-        <p className="mt-4 text-base leading-relaxed text-muted-foreground">{description}</p>
+        <p className="mt-3.5 max-w-prose text-[0.95rem] leading-relaxed text-muted-foreground">
+          {description}
+        </p>
       ) : null}
     </Reveal>
   );

@@ -8,13 +8,18 @@ import {
 } from "../_shared/http.ts";
 import { requireMember } from "../_shared/supabase.ts";
 import {
+  buildModelContents,
+  RECENT_MESSAGE_LIMIT,
+  UUID_PATTERN,
+  type PersistedMessage,
+} from "./memory.ts";
+import {
   executeTool,
   functionDeclarations,
   type AIAction,
   type ToolContext,
 } from "./tools/registry.ts";
 
-type ChatMessage = { role: "assistant" | "user"; text: string };
 type GeminiPart = {
   text?: string;
   functionCall?: { name?: string; args?: unknown };
@@ -37,18 +42,11 @@ Use navigate or open_widget naturally when it improves the experience. Say thing
 
 Never request or reveal private member data, credentials, raw SQL, internal database details, or secrets. You cannot execute JavaScript, CSS, DOM selectors, SQL, URLs, or arbitrary browser commands. Only the predefined tools can alter the experience. Clearly warn before spoilers.`;
 
-function parseHistory(value: unknown): ChatMessage[] {
-  if (!Array.isArray(value)) return [];
-  const parsed = value.slice(-8).flatMap((item) => {
-    if (!item || typeof item !== "object") return [];
-    const record = item as Record<string, unknown>;
-    if (record.role !== "assistant" && record.role !== "user") return [];
-    if (typeof record.text !== "string") return [];
-    const text = record.text.trim().slice(0, 1000);
-    return text ? [{ role: record.role, text }] : [];
-  });
-  while (parsed[0]?.role === "assistant") parsed.shift();
-  return parsed.filter((item, index) => index === 0 || item.role !== parsed[index - 1]?.role);
+function parseUuid(value: unknown, label: string): string {
+  if (typeof value !== "string" || !UUID_PATTERN.test(value)) {
+    throw new HttpError(`${label} must be a valid UUID.`, 400);
+  }
+  return value;
 }
 
 async function callGemini(
@@ -93,72 +91,252 @@ Deno.serve(async (request) => {
     return new Response(null, { status: 204, headers: corsHeaders(request) });
   if (request.method !== "POST") return json(request, { message: "Method not allowed." }, 405);
 
+  let persistedContext: { conversationId: string; userMessageId: string } | null = null;
   try {
     assertTrustedOrigin(request);
     const { client, member } = await requireMember(request);
     const body = (await request.json()) as Record<string, unknown>;
-    const message = cleanText(body.message, "Message", 1, 1000);
-    const history = parseHistory(body.history);
+    const message = cleanText(body.message, "Message", 1, 4000);
+    const requestId = parseUuid(body.requestId, "Request ID");
+    const suppliedConversationId =
+      body.conversationId == null ? null : parseUuid(body.conversationId, "Conversation ID");
+    const ownerId = String(member.id);
     const apiKey = Deno.env.get("GEMINI_API_KEY");
     const model = Deno.env.get("GEMINI_MODEL") ?? "gemini-2.0-flash";
-    if (!apiKey) throw new HttpError("The AI service is not configured.", 503);
 
-    const contents: GeminiContent[] = [
-      ...history.map((item): GeminiContent => ({
-        role: item.role === "assistant" ? "model" : "user",
-        parts: [{ text: item.text }],
-      })),
-      { role: "user", parts: [{ text: message }] },
-    ];
+    let conversationId = suppliedConversationId;
+    if (conversationId) {
+      const { data: ownedConversation, error: conversationError } = await client
+        .from("ai_conversations")
+        .select("id")
+        .eq("id", conversationId)
+        .eq("owner_id", ownerId)
+        .maybeSingle();
+      if (conversationError) throw new HttpError("The conversation could not be loaded.", 500);
+      if (!ownedConversation) throw new HttpError("Conversation not found.", 404);
+    } else {
+      const { data: createdConversation, error: createConversationError } = await client
+        .from("ai_conversations")
+        .insert({ owner_id: ownerId, initial_request_id: requestId })
+        .select("id,owner_id")
+        .eq("owner_id", ownerId)
+        .maybeSingle();
+      if (createConversationError || !createdConversation) {
+        const { data: existingConversation, error: existingConversationError } = await client
+          .from("ai_conversations")
+          .select("id")
+          .eq("owner_id", ownerId)
+          .eq("initial_request_id", requestId)
+          .maybeSingle();
+        if (existingConversationError || !existingConversation) {
+          throw new HttpError("The conversation could not be created.", 500);
+        }
+        conversationId = String(existingConversation.id);
+      } else {
+        conversationId = String(createdConversation.id);
+      }
+    }
+
+    const loadRequestMessages = async () => {
+      const { data, error } = await client
+        .from("ai_messages")
+        .select(
+          "id,role,content,status,request_id,sequence,created_at,metadata,ai_conversations!inner(owner_id)",
+        )
+        .eq("conversation_id", conversationId)
+        .eq("request_id", requestId)
+        .eq("ai_conversations.owner_id", ownerId)
+        .order("sequence", { ascending: true });
+      if (error) throw new HttpError("The conversation could not be loaded.", 500);
+      return data ?? [];
+    };
+
+    let requestMessages = await loadRequestMessages();
+    let userRow = requestMessages.find((item) => item.role === "user");
+    const existingAssistant = requestMessages.find((item) => item.role === "assistant");
+
+    if (userRow && String(userRow.content) !== message) {
+      throw new HttpError("This request ID was already used for a different message.", 409);
+    }
+    if (existingAssistant) {
+      if (userRow?.status !== "complete") {
+        await client.from("ai_messages").update({ status: "complete" }).eq("id", userRow?.id);
+      }
+      const metadata =
+        existingAssistant.metadata && typeof existingAssistant.metadata === "object"
+          ? (existingAssistant.metadata as Record<string, unknown>)
+          : {};
+      return json(request, {
+        reply: String(existingAssistant.content),
+        actions: Array.isArray(metadata.actions) ? metadata.actions : [],
+        model: typeof metadata.model === "string" ? metadata.model : model,
+        conversationId,
+        userMessageId: String(userRow?.id ?? ""),
+        assistantMessageId: String(existingAssistant.id),
+      });
+    }
+
+    if (userRow?.status === "complete") {
+      throw new HttpError("This message is already being processed.", 409);
+    }
+    if (userRow?.status === "pending") {
+      throw new HttpError("This message is already being processed.", 409);
+    }
+    if (userRow?.status === "failed") {
+      const retryCount = Number(
+        (userRow.metadata as Record<string, unknown> | null)?.retryCount ?? 0,
+      );
+      const { data: retriedUser, error: retryError } = await client
+        .from("ai_messages")
+        .update({ status: "pending", metadata: { retryCount: retryCount + 1 } })
+        .eq("id", userRow.id)
+        .eq("status", "failed")
+        .select("id,role,content,sequence")
+        .single();
+      if (retryError || !retriedUser) {
+        throw new HttpError("This message is already being processed.", 409);
+      }
+      userRow = retriedUser;
+    } else if (!userRow) {
+      const { data: insertedUser, error: insertUserError } = await client
+        .from("ai_messages")
+        .insert({
+          conversation_id: conversationId,
+          role: "user",
+          content: message,
+          status: "pending",
+          request_id: requestId,
+        })
+        .select("id,role,content,sequence")
+        .single();
+      if (insertUserError || !insertedUser) {
+        requestMessages = await loadRequestMessages();
+        const racedUser = requestMessages.find((item) => item.role === "user");
+        if (racedUser) throw new HttpError("This message is already being processed.", 409);
+        throw new HttpError("The message could not be saved.", 500);
+      }
+      userRow = insertedUser;
+    }
+
+    const currentUserMessage: PersistedMessage = {
+      id: String(userRow.id),
+      role: "user",
+      content: String(userRow.content),
+      sequence: Number(userRow.sequence),
+    };
+    persistedContext = { conversationId, userMessageId: currentUserMessage.id };
+    const { data: priorRows, error: historyError } = await client
+      .from("ai_messages")
+      .select("id,role,content,sequence,ai_conversations!inner(owner_id)")
+      .eq("conversation_id", conversationId)
+      .eq("status", "complete")
+      .eq("ai_conversations.owner_id", ownerId)
+      .lt("sequence", currentUserMessage.sequence)
+      .order("sequence", { ascending: false })
+      .limit(RECENT_MESSAGE_LIMIT - 1);
+    if (historyError) {
+      await client
+        .from("ai_messages")
+        .update({ status: "failed", metadata: { failure: "history" } })
+        .eq("id", userRow.id);
+      throw new HttpError("The conversation history could not be loaded.", 500);
+    }
+    const priorMessages = (priorRows ?? []).map((item): PersistedMessage => ({
+      id: String(item.id),
+      role: item.role === "assistant" ? "assistant" : "user",
+      content: String(item.content),
+      sequence: Number(item.sequence),
+    }));
+    const contents: GeminiContent[] = buildModelContents(priorMessages, currentUserMessage);
     const toolContext: ToolContext = {
       client,
-      member: { id: String(member.id), role: String(member.role) },
+      member: { id: ownerId, role: String(member.role) },
       bookCache: new Map(),
     };
     const actions: AIAction[] = [];
+    const toolNames = new Set<string>();
     let reply = "";
 
-    for (let round = 0; round < 4; round += 1) {
-      const content = await callGemini(apiKey, model, contents);
-      const text = content.parts
-        .map((part) => part.text ?? "")
-        .join("")
-        .trim();
-      const calls = content.parts.flatMap((part) =>
-        part.functionCall?.name ? [part.functionCall] : [],
-      );
-      if (!calls.length) {
-        reply = text;
-        break;
-      }
-
-      contents.push(content);
-      const responseParts: GeminiPart[] = [];
-      for (const call of calls.slice(0, 4)) {
-        const name = call.name ?? "unknown";
-        try {
-          const result = await executeTool(name, call.args ?? {}, toolContext);
-          if (result.action && actions.length < 6) actions.push(result.action);
-          responseParts.push({ functionResponse: { name, response: result.response } });
-        } catch (error) {
-          const message =
-            error instanceof HttpError ? error.message : "The action could not be completed.";
-          responseParts.push({
-            functionResponse: { name, response: { ok: false, error: message } },
-          });
+    try {
+      if (!apiKey) throw new HttpError("The AI service is not configured.", 503);
+      for (let round = 0; round < 4; round += 1) {
+        const content = await callGemini(apiKey, model, contents);
+        const text = content.parts
+          .map((part) => part.text ?? "")
+          .join("")
+          .trim();
+        const calls = content.parts.flatMap((part) =>
+          part.functionCall?.name ? [part.functionCall] : [],
+        );
+        if (!calls.length) {
+          reply = text;
+          break;
         }
-      }
-      contents.push({ role: "user", parts: responseParts });
-      if (text) reply = text;
-    }
 
-    if (!reply) {
-      reply = actions.length
-        ? "Done — a little website magic, just for you."
-        : "I lost my place for a moment. Ask me again?";
+        contents.push(content);
+        const responseParts: GeminiPart[] = [];
+        for (const call of calls.slice(0, 4)) {
+          const name = call.name ?? "unknown";
+          toolNames.add(name);
+          try {
+            const result = await executeTool(name, call.args ?? {}, toolContext);
+            if (result.action && actions.length < 6) actions.push(result.action);
+            responseParts.push({ functionResponse: { name, response: result.response } });
+          } catch (error) {
+            const message =
+              error instanceof HttpError ? error.message : "The action could not be completed.";
+            responseParts.push({
+              functionResponse: { name, response: { ok: false, error: message } },
+            });
+          }
+        }
+        contents.push({ role: "user", parts: responseParts });
+        if (text) reply = text;
+      }
+
+      if (!reply) {
+        if (actions.length) reply = "Done — a little website magic, just for you.";
+        else throw new HttpError("Books returned an empty answer.", 502);
+      }
+
+      const { data: assistantRow, error: assistantError } = await client
+        .from("ai_messages")
+        .insert({
+          conversation_id: conversationId,
+          role: "assistant",
+          content: reply,
+          status: "complete",
+          request_id: requestId,
+          metadata: { model, actions, toolNames: [...toolNames] },
+        })
+        .select("id")
+        .single();
+      if (assistantError || !assistantRow) {
+        throw new HttpError("The reply could not be saved.", 500);
+      }
+      await client.from("ai_messages").update({ status: "complete" }).eq("id", userRow.id);
+
+      return json(request, {
+        reply,
+        actions,
+        model,
+        conversationId,
+        userMessageId: String(userRow.id),
+        assistantMessageId: String(assistantRow.id),
+      });
+    } catch (error) {
+      await client
+        .from("ai_messages")
+        .update({ status: "failed", metadata: { failure: "inference" } })
+        .eq("id", userRow.id);
+      throw error;
     }
-    return json(request, { reply, actions, model });
   } catch (error) {
+    if (persistedContext) {
+      const status = error instanceof HttpError ? error.status : 500;
+      const message = error instanceof HttpError ? error.message : "Something went wrong.";
+      return json(request, { message, ...persistedContext, retryable: true }, status);
+    }
     return handleError(request, error);
   }
 });

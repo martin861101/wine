@@ -4,7 +4,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Textarea } from "@/components/ui/textarea";
-import { aiApi } from "@/lib/api";
+import { aiApi, BooksChatError } from "@/lib/api";
 import { dispatchAIAction } from "@/lib/ai-actions";
 import {
   canOfferProactive,
@@ -14,12 +14,15 @@ import {
   type ProactiveState,
 } from "@/lib/ai-proactive";
 import { useAuth } from "@/lib/auth";
+import { activeConversationStorageKey, booksGreeting } from "@/lib/books-memory";
 import { BOOKS_WIDGET_OPEN_EVENT } from "@/lib/books-widget";
 
 type Message = {
-  id: number;
+  id: string;
   role: "assistant" | "user";
   text: string;
+  status: "pending" | "complete" | "failed";
+  requestId: string | null;
 };
 
 const quickPrompts = ["What’s happening in the club?", "Find my next book", "Surprise me"];
@@ -27,25 +30,76 @@ const quickPrompts = ["What’s happening in the club?", "Find my next book", "S
 const proactiveStorageKey = "books-ai:proactive";
 
 export function DemoChatWidget() {
-  const { isAuthenticated, isLoading: isAuthLoading } = useAuth();
+  const { user, isAuthenticated, isLoading: isAuthLoading } = useAuth();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
-  const [nextId, setNextId] = useState(2);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [retryRequest, setRetryRequest] = useState<{ id: string; text: string } | null>(null);
   const [isSending, setIsSending] = useState(false);
+  const [isRestoring, setIsRestoring] = useState(false);
   const [proactivePrompt, setProactivePrompt] = useState<string | null>(null);
   const messageInputRef = useRef<HTMLTextAreaElement>(null);
+  const memberIdRef = useRef<string | null>(null);
+  const previousMemberIdRef = useRef<string | null>(null);
   const [proactiveState, setProactiveState] = useState<ProactiveState>(() =>
     typeof window === "undefined"
       ? { count: 0, lastAt: 0, dismissed: false }
       : parseProactiveState(sessionStorage.getItem(proactiveStorageKey)),
   );
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      role: "assistant",
-      text: "Hi, I’m Miss Books. Ask me about books, discussion prompts or a wine pairing.",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([booksGreeting]);
+
+  useEffect(() => {
+    const memberId = user?.id ?? null;
+    const previousMemberId = previousMemberIdRef.current;
+    memberIdRef.current = memberId;
+    previousMemberIdRef.current = memberId;
+    setMessages([booksGreeting]);
+    setConversationId(null);
+    setRetryRequest(null);
+    setIsSending(false);
+    setIsRestoring(Boolean(memberId));
+
+    if (!memberId) {
+      if (previousMemberId) {
+        localStorage.removeItem(activeConversationStorageKey(previousMemberId));
+      }
+      return;
+    }
+    if (previousMemberId && previousMemberId !== memberId) {
+      localStorage.removeItem(activeConversationStorageKey(previousMemberId));
+    }
+
+    let active = true;
+    const storageKey = activeConversationStorageKey(memberId);
+    const preferredConversationId = localStorage.getItem(storageKey);
+    void aiApi
+      .restoreConversation(preferredConversationId)
+      .then((restored) => {
+        if (!active || memberIdRef.current !== memberId) return;
+        setConversationId(restored.conversationId);
+        if (restored.conversationId) {
+          localStorage.setItem(storageKey, restored.conversationId);
+        } else {
+          localStorage.removeItem(storageKey);
+        }
+        setMessages([booksGreeting, ...restored.messages]);
+        const retryable = [...restored.messages]
+          .reverse()
+          .find((message) => message.role === "user" && message.status !== "complete");
+        setRetryRequest(
+          retryable?.requestId ? { id: retryable.requestId, text: retryable.text } : null,
+        );
+      })
+      .catch(() => {
+        if (active && memberIdRef.current === memberId) localStorage.removeItem(storageKey);
+      })
+      .finally(() => {
+        if (active && memberIdRef.current === memberId) setIsRestoring(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [user?.id]);
 
   useEffect(() => {
     const openAndFocus = () => {
@@ -81,46 +135,116 @@ export function DemoChatWidget() {
   async function sendMessage(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const text = draft.trim();
-    if (!text || isSending || isAuthLoading) return;
-    const userMessage = { id: nextId, role: "user" as const, text };
-    setMessages((current) => [...current, userMessage]);
-    setNextId((current) => current + 2);
+    if (!text || isSending || isRestoring || isAuthLoading) return;
     setDraft("");
 
     if (!isAuthenticated) {
       setMessages((current) => [
         ...current,
         {
-          id: nextId + 1,
+          id: `local-user:${crypto.randomUUID()}`,
+          role: "user",
+          text,
+          status: "complete",
+          requestId: null,
+        },
+        {
+          id: `local-error:${crypto.randomUUID()}`,
           role: "assistant",
           text: "Please sign in with an approved membership to use the live reading-room assistant.",
+          status: "complete",
+          requestId: null,
         },
       ]);
       return;
     }
 
+    const memberId = user?.id ?? null;
+    if (!memberId) return;
+    const requestId = retryRequest?.text === text ? retryRequest.id : crypto.randomUUID();
+    setMessages((current) => {
+      const withoutPriorError = current.filter((item) => item.id !== `error:${requestId}`);
+      const existing = withoutPriorError.some(
+        (item) => item.role === "user" && item.requestId === requestId,
+      );
+      if (existing) {
+        return withoutPriorError.map((item) =>
+          item.role === "user" && item.requestId === requestId
+            ? { ...item, status: "pending" }
+            : item,
+        );
+      }
+      return [
+        ...withoutPriorError,
+        {
+          id: `optimistic:${requestId}`,
+          role: "user",
+          text,
+          status: "pending",
+          requestId,
+        },
+      ];
+    });
     setIsSending(true);
     try {
-      const result = await aiApi.chat(text, messages);
-      setMessages((current) => [
-        ...current,
-        { id: nextId + 1, role: "assistant", text: result.reply },
-      ]);
+      const result = await aiApi.chat(text, conversationId, requestId);
+      if (memberIdRef.current !== memberId) return;
+      setConversationId(result.conversationId);
+      localStorage.setItem(activeConversationStorageKey(memberId), result.conversationId);
+      setMessages((current) => {
+        const reconciled = current.map((item) =>
+          item.role === "user" && item.requestId === requestId
+            ? { ...item, id: result.userMessageId, status: "complete" as const }
+            : item,
+        );
+        if (reconciled.some((item) => item.id === result.assistantMessageId)) return reconciled;
+        return [
+          ...reconciled,
+          {
+            id: result.assistantMessageId,
+            role: "assistant",
+            text: result.reply,
+            status: "complete",
+            requestId,
+          },
+        ];
+      });
+      setRetryRequest(null);
       result.actions.forEach(dispatchAIAction);
     } catch (error) {
+      if (memberIdRef.current !== memberId) return;
+      if (error instanceof BooksChatError) {
+        setConversationId(error.conversationId);
+        localStorage.setItem(activeConversationStorageKey(memberId), error.conversationId);
+        setMessages((current) =>
+          current.map((item) =>
+            item.role === "user" && item.requestId === requestId
+              ? { ...item, id: error.userMessageId }
+              : item,
+          ),
+        );
+      }
+      setRetryRequest({ id: requestId, text });
       setMessages((current) => [
-        ...current,
+        ...current.map((item) =>
+          item.role === "user" && item.requestId === requestId
+            ? { ...item, status: "failed" as const }
+            : item,
+        ),
         {
-          id: nextId + 1,
+          id: `error:${requestId}`,
           role: "assistant",
           text:
             error instanceof Error
               ? error.message
               : "The reading-room assistant is unavailable. Please try again.",
+          status: "complete",
+          requestId: null,
         },
       ]);
+      setDraft(text);
     } finally {
-      setIsSending(false);
+      if (memberIdRef.current === memberId) setIsSending(false);
     }
   }
 
@@ -276,7 +400,7 @@ export function DemoChatWidget() {
                 variant="hero"
                 size="icon"
                 aria-label="Send message"
-                disabled={isSending || isAuthLoading || !draft.trim()}
+                disabled={isSending || isRestoring || isAuthLoading || !draft.trim()}
               >
                 <Send aria-hidden="true" />
               </Button>
