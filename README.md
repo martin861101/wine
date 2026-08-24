@@ -26,11 +26,11 @@ Wine & Chapters is the web home of a community-led book club. The public site in
 
 - **Public experience:** current reads, an interactive upcoming-events calendar, early review participation, member perspectives, the club story, a Shop preview, contact, and newsletter signup.
 - **Member clubhouse:** book suggestions, voting, discussions, reviews, event RSVPs, community activity, and an AI reading companion.
-- **Admin workspace:** member approval, book and event management, moderation, current-read selection, and email broadcasts.
+- **Admin workspace:** a responsive sidebar dashboard for member approval, book and event management, moderation, current-read selection, broadcasts, subscribers, and payment settings.
 - **Admin media and moderation:** book-review covers are uploaded to the admin-only `review-images` Storage bucket (external legacy cover URLs still work), and Reading Room posts can be soft-removed or restored without deleting their comments.
 - **Book discovery:** Open Library metadata, Tavily-powered current research, and a safe server-side webpage reader.
 - **Books AI memory and actions:** owner-isolated Supabase conversations survive refresh/reopen, while a validated tool registry lets Gemini combine persisted context with live club data, book research, safe navigation, themed previews, and member-facing actions.
-- **Payments:** optional Paystack contributions through server-side checkout and a signed webhook.
+- **Payments:** administrator-controlled secure online contributions or manual-payment instructions, with server-side checkout and a signed webhook.
 - **Branded communication:** verification, recovery, contact, and broadcast email flows.
 - **Responsive editorial hero:** the homepage uses dedicated landscape and portrait artwork, an organic staged reveal, restrained depth/scroll motion, and accessible reduced-motion fallbacks. The primary actions lead to registration and the live monthly-read section.
 - **About storybook:** the homepage presents a single book cover that opens into a paced, multi-page story. The dedicated About page uses two-column book typography on desktop, single-column mobile text, and video chapters on alternate spreads.
@@ -111,6 +111,10 @@ npm run dev:ui
 
 Never expose a service-role key, database password, SMTP password, Gemini key, or Paystack secret through a `VITE_*` variable.
 
+### Payment method settings
+
+Administrators can enable or disable online payments in the dashboard and provide a manual-payment message for members. This setting is public-readable only so the browser can select the appropriate payment method; writes are enforced by Supabase RLS for approved administrators. The checkout Edge Function independently checks the setting and fails closed when online payments are disabled, while existing payment verification and webhook processing continue unchanged. Keep provider secrets, API keys, and passwords out of the manual message.
+
 ## Useful commands
 
 | Command                   | Purpose                                             |
@@ -165,6 +169,18 @@ SUPABASE_ACCESS_TOKEN=your-token npm run deploy:supabase -- --yes
 Interactive deployments use the current `supabase login` session. Set `SUPABASE_PROFILE` only when selecting an explicitly named CLI profile.
 
 Edge Function secrets must be configured in Supabase before deployment. Keep local secrets in ignored environment files and never commit them. See the [Supabase backend guide](docs/SUPABASE_BACKEND.md) for the full setup, secret list, webhook configuration, and verification procedure.
+
+### Contact email delivery
+
+The public contact form invokes the `send-email` Edge Function. It stores the contact message and only returns success after SMTP accepts the committee notification and acknowledgement. Configure these Supabase secret names before deployment: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_FROM`, `CONTACT_EMAIL`, `CORS_ORIGIN`, and `PUBLIC_APP_URL`.
+
+Deploy the corrected function to the production project with:
+
+```sh
+supabase functions deploy send-email --project-ref ykyzelgoeblxhcdguyww
+```
+
+The production UI must use `VITE_SUPABASE_URL=https://ykyzelgoeblxhcdguyww.supabase.co`; this value is present in `ui/.env.example` and should also be set in the production UI environment before rebuilding.
 
 Books uses `TAVILY_API_KEY` only inside `ai-chat` for current web discovery. Open Library search and metadata do not require an API key. The browser receives normalized results and never receives either Gemini or Tavily credentials.
 

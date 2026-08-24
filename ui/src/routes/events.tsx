@@ -21,7 +21,13 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { contributionApi, memberApi, publicApi, type ClubEvent } from "@/lib/api";
+import {
+  contributionApi,
+  memberApi,
+  paymentSettingsApi,
+  publicApi,
+  type ClubEvent,
+} from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { parseEventDate } from "@/lib/event-date";
 
@@ -141,11 +147,16 @@ function ContributionCard() {
   const { user } = useAuth();
   const [amount, setAmount] = useState("100");
   const [email, setEmail] = useState(user?.email ?? "");
+  const paymentSettings = useQuery({
+    queryKey: ["payment-method-settings"],
+    queryFn: paymentSettingsApi.get,
+    staleTime: 60_000,
+  });
   const checkout = useMutation({
     mutationFn: () => contributionApi.checkout(Number(amount), email),
     onSuccess: ({ checkoutUrl }) => window.location.assign(checkoutUrl),
     onError: (error) =>
-      toast.error(error instanceof Error ? error.message : "Paystack checkout could not start."),
+      toast.error(error instanceof Error ? error.message : "Secure checkout could not start."),
   });
 
   useEffect(() => {
@@ -159,13 +170,14 @@ function ContributionCard() {
   }, []);
 
   function contribute() {
+    if (!paymentSettings.data?.onlinePaymentsEnabled) return;
     const value = Number(amount);
     if (!Number.isFinite(value) || value < 20 || value > 100_000) {
       toast.error("Enter a contribution between R20 and R100,000.");
       return;
     }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email.trim())) {
-      toast.error("Enter a valid email address for your Paystack receipt.");
+      toast.error("Enter a valid email address for your receipt.");
       return;
     }
     checkout.mutate();
@@ -188,71 +200,90 @@ function ContributionCard() {
           </p>
         </div>
         <div className="rounded-3xl border border-border/60 bg-background/75 p-6">
-          <p className="text-sm font-medium">Choose an amount</p>
-          <div className="mt-3 grid grid-cols-4 gap-2">
-            {[50, 100, 250, 500].map((value) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setAmount(String(value))}
-                className={`rounded-full border px-3 py-2 text-sm transition-colors ${
-                  amount === String(value)
-                    ? "border-primary bg-primary text-primary-foreground"
-                    : "border-border/70 hover:border-primary/50"
-                }`}
+          {paymentSettings.isPending ? (
+            <p className="text-sm text-muted-foreground" aria-live="polite">
+              Loading payment options…
+            </p>
+          ) : paymentSettings.isError ? (
+            <p className="text-sm text-destructive" role="alert">
+              Payment options could not be loaded. Please refresh and try again.
+            </p>
+          ) : !paymentSettings.data?.onlinePaymentsEnabled ? (
+            <div aria-live="polite">
+              <p className="text-sm font-medium">Manual payment instructions</p>
+              <p className="mt-3 whitespace-pre-wrap break-words rounded-2xl bg-muted/60 p-4 text-sm leading-6 text-foreground">
+                {paymentSettings.data?.manualPaymentMessage}
+              </p>
+            </div>
+          ) : (
+            <>
+              <p className="text-sm font-medium">Choose an amount</p>
+              <div className="mt-3 grid grid-cols-4 gap-2">
+                {[50, 100, 250, 500].map((value) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => setAmount(String(value))}
+                    className={`rounded-full border px-3 py-2 text-sm transition-colors ${
+                      amount === String(value)
+                        ? "border-primary bg-primary text-primary-foreground"
+                        : "border-border/70 hover:border-primary/50"
+                    }`}
+                  >
+                    R{value}
+                  </button>
+                ))}
+              </div>
+              <label
+                htmlFor="contribution-amount"
+                className="mt-5 block text-xs font-medium text-muted-foreground"
               >
-                R{value}
-              </button>
-            ))}
-          </div>
-          <label
-            htmlFor="contribution-amount"
-            className="mt-5 block text-xs font-medium text-muted-foreground"
-          >
-            Custom amount (ZAR)
-          </label>
-          <Input
-            id="contribution-amount"
-            type="number"
-            min="20"
-            step="10"
-            value={amount}
-            onChange={(event) => setAmount(event.target.value)}
-            className="mt-2"
-          />
-          <label
-            htmlFor="contribution-email"
-            className="mt-4 block text-xs font-medium text-muted-foreground"
-          >
-            Receipt email
-          </label>
-          <Input
-            id="contribution-email"
-            type="email"
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            placeholder="you@example.com"
-            readOnly={Boolean(user?.email)}
-            className="mt-2"
-          />
-          <Button
-            type="button"
-            variant="hero"
-            size="lg"
-            className="mt-5 w-full"
-            disabled={checkout.isPending}
-            onClick={contribute}
-          >
-            {checkout.isPending ? (
-              <LoaderCircle className="animate-spin" aria-hidden="true" />
-            ) : (
-              <CreditCard aria-hidden="true" />
-            )}
-            {checkout.isPending ? "Opening Paystack…" : "Contribute with Paystack"}
-          </Button>
-          <p className="mt-3 text-center text-xs text-muted-foreground">
-            Secure checkout. Contributions are optional and non-recurring.
-          </p>
+                Custom amount (ZAR)
+              </label>
+              <Input
+                id="contribution-amount"
+                type="number"
+                min="20"
+                step="10"
+                value={amount}
+                onChange={(event) => setAmount(event.target.value)}
+                className="mt-2"
+              />
+              <label
+                htmlFor="contribution-email"
+                className="mt-4 block text-xs font-medium text-muted-foreground"
+              >
+                Receipt email
+              </label>
+              <Input
+                id="contribution-email"
+                type="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                placeholder="you@example.com"
+                readOnly={Boolean(user?.email)}
+                className="mt-2"
+              />
+              <Button
+                type="button"
+                variant="hero"
+                size="lg"
+                className="mt-5 w-full"
+                disabled={checkout.isPending}
+                onClick={contribute}
+              >
+                {checkout.isPending ? (
+                  <LoaderCircle className="animate-spin" aria-hidden="true" />
+                ) : (
+                  <CreditCard aria-hidden="true" />
+                )}
+                {checkout.isPending ? "Opening secure checkout…" : "Continue to secure checkout"}
+              </Button>
+              <p className="mt-3 text-center text-xs text-muted-foreground">
+                Contribute securely. Contributions are optional and non-recurring.
+              </p>
+            </>
+          )}
         </div>
       </CardContent>
     </Card>

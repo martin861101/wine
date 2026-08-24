@@ -29,6 +29,22 @@ async function optionalMember(request: Request) {
   return member;
 }
 
+async function assertOnlinePaymentsEnabled() {
+  const client = serviceClient();
+  const { data, error } = await client
+    .from("payment_method_settings")
+    .select("online_payments_enabled")
+    .eq("singleton", true)
+    .maybeSingle();
+  // Fail closed: a missing or unreadable setting must never start a checkout.
+  if (error || !data?.online_payments_enabled) {
+    throw new HttpError(
+      "Online payments are currently unavailable. Please use the payment instructions provided by Wine & Chapters.",
+      503,
+    );
+  }
+}
+
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS")
     return new Response(null, { status: 204, headers: corsHeaders(request) });
@@ -47,9 +63,11 @@ Deno.serve(async (request) => {
       const reference = cleanText(body.reference, "Reference", 36, 64);
       const result = await paystackRequest(`/transaction/verify/${encodeURIComponent(reference)}`);
       const providerData = result.data as Record<string, unknown> | undefined;
-      if (!providerData) throw new HttpError("Paystack returned no transaction.", 502);
+      if (!providerData) throw new HttpError("The payment provider returned no transaction.", 502);
       return json(request, await markMembershipPaid(reference, providerData));
     }
+
+    await assertOnlinePaymentsEnabled();
 
     if (action === "contribution") {
       const amount = Number(body.amount);
@@ -103,7 +121,7 @@ Deno.serve(async (request) => {
         const paystack = initialized.data as
           { authorization_url?: string; reference?: string } | undefined;
         if (!paystack?.authorization_url) {
-          throw new HttpError("Paystack returned no checkout URL.", 502);
+          throw new HttpError("Secure checkout returned no checkout URL.", 502);
         }
         await client
           .from("contribution_orders")
@@ -165,7 +183,7 @@ Deno.serve(async (request) => {
       const paystack = initialized.data as
         { authorization_url?: string; reference?: string } | undefined;
       if (!paystack?.authorization_url)
-        throw new HttpError("Paystack returned no checkout URL.", 502);
+        throw new HttpError("Secure checkout returned no checkout URL.", 502);
       await client
         .from("membership_orders")
         .update({ provider_reference: paystack.reference ?? order.id })

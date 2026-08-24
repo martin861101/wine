@@ -198,7 +198,7 @@ export const authApi = {
 
 export const contactApi = {
   async send(input: { name: string; email: string; subject: string; message: string }) {
-    const { data, error } = await supabase.functions.invoke<{ message: string }>("contact", {
+    const { data, error } = await supabase.functions.invoke<{ message: string }>("send-email", {
       body: input,
     });
     if (error || !data) return await throwFunctionError(error, "Your message could not be sent.");
@@ -344,7 +344,7 @@ export const membershipApi = {
       body: { action: "checkout", tier, email: email.trim().toLowerCase() },
     });
     if (error || !data?.checkoutUrl)
-      return await throwFunctionError(error, "Paystack checkout could not start.");
+      return await throwFunctionError(error, "Secure checkout could not start.");
     return data;
   },
 
@@ -372,8 +372,41 @@ export const contributionApi = {
       },
     });
     if (error || !data?.checkoutUrl)
-      return await throwFunctionError(error, "Paystack checkout could not start.");
+      return await throwFunctionError(error, "Secure checkout could not start.");
     return data;
+  },
+};
+
+export interface PaymentMethodSettings {
+  onlinePaymentsEnabled: boolean;
+  manualPaymentMessage: string;
+}
+
+const defaultPaymentMethodSettings: PaymentMethodSettings = {
+  onlinePaymentsEnabled: false,
+  manualPaymentMessage:
+    "Online payments are currently unavailable. Please contact Wine & Chapters for banking details and payment instructions.",
+};
+
+function mapPaymentMethodSettings(row: {
+  online_payments_enabled: boolean;
+  manual_payment_message: string;
+}): PaymentMethodSettings {
+  return {
+    onlinePaymentsEnabled: row.online_payments_enabled,
+    manualPaymentMessage: row.manual_payment_message,
+  };
+}
+
+export const paymentSettingsApi = {
+  async get(): Promise<PaymentMethodSettings> {
+    const { data, error } = await supabase
+      .from("payment_method_settings")
+      .select("online_payments_enabled,manual_payment_message")
+      .eq("singleton", true)
+      .maybeSingle();
+    if (error) throwApiError(error, "Payment options could not be loaded.");
+    return data ? mapPaymentMethodSettings(data) : defaultPaymentMethodSettings;
   },
 };
 
@@ -809,6 +842,31 @@ export type AdminEvent = Omit<ClubEvent, "attendingCount" | "myRsvp"> & {
 };
 
 export const adminApi = {
+  async getPaymentSettings(): Promise<PaymentMethodSettings> {
+    return paymentSettingsApi.get();
+  },
+
+  async updatePaymentSettings(input: PaymentMethodSettings): Promise<PaymentMethodSettings> {
+    const manualPaymentMessage = input.manualPaymentMessage.trim();
+    if (!manualPaymentMessage) {
+      throw new ApiError("Add payment instructions for members before saving.");
+    }
+    const { data, error } = await supabase
+      .from("payment_method_settings")
+      .upsert(
+        {
+          singleton: true,
+          online_payments_enabled: input.onlinePaymentsEnabled,
+          manual_payment_message: manualPaymentMessage,
+        },
+        { onConflict: "singleton" },
+      )
+      .select("online_payments_enabled,manual_payment_message")
+      .single();
+    if (error || !data) throwApiError(error, "Payment settings could not be saved.");
+    return mapPaymentMethodSettings(data);
+  },
+
   async getOverview(): Promise<AdminOverview> {
     const { data, error } = await supabase.rpc("get_admin_overview");
     if (error || !data) throwApiError(error, "The admin dashboard could not be loaded.");

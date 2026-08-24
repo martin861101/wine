@@ -4,6 +4,12 @@ import { escapeHtml } from "./http.ts";
 
 type Email = { to: string | string[]; subject: string; text: string; replyTo?: string };
 
+export class EmailDeliveryError extends Error {
+  constructor(message: string, readonly providerStatus?: number) {
+    super(message);
+  }
+}
+
 export function brandedEmailHtml(subject: string, contentHtml: string): string {
   const appUrl = (Deno.env.get("PUBLIC_APP_URL") ?? "https://wineandchapters.co.za").replace(
     /\/$/,
@@ -16,7 +22,10 @@ export async function sendEmail(input: Email): Promise<boolean> {
   const host = Deno.env.get("SMTP_HOST");
   const user = Deno.env.get("SMTP_USER");
   const pass = Deno.env.get("SMTP_PASSWORD");
-  if (!host || !user || !pass) return false;
+  if (!host || !user || !pass) {
+    console.error("Email delivery is unavailable: SMTP configuration is incomplete.");
+    throw new EmailDeliveryError("Email delivery is not configured.");
+  }
 
   const port = Number(Deno.env.get("SMTP_PORT") ?? "465");
   const secure = (Deno.env.get("SMTP_SECURE") ?? "true").toLowerCase() === "true";
@@ -29,16 +38,30 @@ export async function sendEmail(input: Email): Promise<boolean> {
     auth: { user, pass },
   });
 
-  await transport.sendMail({
-    from,
-    to: input.to,
-    subject: input.subject,
-    text: input.text,
-    html: brandedEmailHtml(
-      input.subject,
-      `<div style="white-space:pre-wrap">${escapeHtml(input.text)}</div>`,
-    ),
-    ...(input.replyTo ? { replyTo: input.replyTo } : {}),
-  });
+  try {
+    const result = await transport.sendMail({
+      from,
+      to: input.to,
+      subject: input.subject,
+      text: input.text,
+      html: brandedEmailHtml(
+        input.subject,
+        `<div style="white-space:pre-wrap">${escapeHtml(input.text)}</div>`,
+      ),
+      ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+    });
+    if (result.rejected.length > 0) {
+      throw new EmailDeliveryError("The SMTP provider rejected one or more recipients.");
+    }
+  } catch (error) {
+    if (error instanceof EmailDeliveryError) throw error;
+    const providerStatus =
+      typeof error === "object" && error && "responseCode" in error &&
+      typeof error.responseCode === "number"
+        ? error.responseCode
+        : undefined;
+    console.error("SMTP delivery request failed.", { providerStatus });
+    throw new EmailDeliveryError("The email provider could not accept the message.", providerStatus);
+  }
   return true;
 }

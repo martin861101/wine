@@ -51,9 +51,14 @@ Deno.serve(async (request) => {
         await sendEmail({ to: recipient, subject, text: message });
         sent += 1;
       } catch (error) {
-        console.error(`Delivery to ${recipient} failed`, error);
+        console.error("Broadcast delivery failed.", {
+          errorType: error instanceof Error ? error.name : typeof error,
+        });
         failed += 1;
       }
+    }
+    if (failed > 0) {
+      throw new HttpError("One or more broadcast emails could not be delivered.", 502);
     }
     return json(request, { audience, recipients: recipients.size, sent, failed });
   } catch (error) {

@@ -29,8 +29,11 @@ export function json(request: Request, body: unknown, status = 200): Response {
 }
 
 export function handleError(request: Request, error: unknown): Response {
-  console.error(error);
   const status = error instanceof HttpError ? error.status : 500;
+  console.error("Edge Function request failed.", {
+    status,
+    errorType: error instanceof Error ? error.name : typeof error,
+  });
   const message = error instanceof HttpError ? error.message : "Something went wrong.";
   return json(request, { message }, status);
 }

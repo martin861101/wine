@@ -1,16 +1,26 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  BookOpen,
   CalendarPlus,
   Check,
+  CreditCard,
   ImagePlus,
+  LayoutDashboard,
+  Lightbulb,
   Mail,
+  Menu,
+  MessageSquare,
   Pencil,
+  Send,
   ShieldCheck,
+  Star,
   Trash2,
   Users,
+  Vote,
   X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useState, type FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -20,6 +30,8 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Switch } from "@/components/ui/switch";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -31,7 +43,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { adminApi, type AdminEvent } from "@/lib/api";
+import { adminApi, type AdminEvent, type PaymentMethodSettings } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
 export const Route = createFileRoute("/admin")({
@@ -46,6 +58,53 @@ export const Route = createFileRoute("/admin")({
   }),
   component: AdminPage,
 });
+
+type AdminSectionId =
+  | "overview"
+  | "members"
+  | "monthly-book"
+  | "events"
+  | "announcements"
+  | "reviews"
+  | "reading-room"
+  | "suggestions"
+  | "polls"
+  | "broadcasts"
+  | "subscribers"
+  | "payment-settings";
+
+const adminNavigation: ReadonlyArray<{
+  label: string;
+  items: ReadonlyArray<{ id: AdminSectionId; label: string; icon: LucideIcon }>;
+}> = [
+  {
+    label: "Club management",
+    items: [
+      { id: "overview", label: "Overview", icon: LayoutDashboard },
+      { id: "members", label: "Members", icon: Users },
+      { id: "monthly-book", label: "Monthly Book", icon: BookOpen },
+      { id: "events", label: "Events", icon: CalendarPlus },
+      { id: "announcements", label: "Announcements", icon: Mail },
+    ],
+  },
+  {
+    label: "Community",
+    items: [
+      { id: "reviews", label: "Reviews", icon: Star },
+      { id: "reading-room", label: "Reading Room", icon: MessageSquare },
+      { id: "suggestions", label: "Suggestions", icon: Lightbulb },
+      { id: "polls", label: "Polls", icon: Vote },
+    ],
+  },
+  {
+    label: "Operations",
+    items: [
+      { id: "broadcasts", label: "Broadcasts", icon: Send },
+      { id: "subscribers", label: "Subscribers", icon: Users },
+      { id: "payment-settings", label: "Payment Settings", icon: CreditCard },
+    ],
+  },
+];
 
 function AdminPage() {
   const { isAuthenticated, isLoading, user } = useAuth();
@@ -67,6 +126,13 @@ function AdminDashboard() {
     retry: 1,
   });
   const adminEvents = useQuery({ queryKey: ["admin-events"], queryFn: adminApi.getEvents });
+  const paymentSettings = useQuery({
+    queryKey: ["admin-payment-settings"],
+    queryFn: adminApi.getPaymentSettings,
+  });
+  const [paymentForm, setPaymentForm] = useState<PaymentMethodSettings | null>(null);
+  const [activeSection, setActiveSection] = useState<AdminSectionId>("overview");
+  const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false);
   const [broadcast, setBroadcast] = useState({
     audience: "MEMBERS" as "MEMBERS" | "SUBSCRIBERS" | "ALL",
     subject: "",
@@ -120,6 +186,10 @@ function AdminDashboard() {
     }
   }, [overview.data?.currentBook]);
 
+  useEffect(() => {
+    if (paymentSettings.data) setPaymentForm(paymentSettings.data);
+  }, [paymentSettings.data]);
+
   const invalidate = () => {
     void queryClient.invalidateQueries({ queryKey: ["admin-overview"] });
     void queryClient.invalidateQueries({ queryKey: ["admin-events"] });
@@ -135,6 +205,20 @@ function AdminDashboard() {
     },
     onError: (error) =>
       toast.error(error instanceof Error ? error.message : "Member update failed."),
+  });
+  const paymentSettingsMutation = useMutation({
+    mutationFn: () => {
+      if (!paymentForm) throw new Error("Payment settings are not ready.");
+      return adminApi.updatePaymentSettings(paymentForm);
+    },
+    onSuccess: (settings) => {
+      setPaymentForm(settings);
+      void queryClient.invalidateQueries({ queryKey: ["admin-payment-settings"] });
+      void queryClient.invalidateQueries({ queryKey: ["payment-method-settings"] });
+      toast.success("Payment settings saved.");
+    },
+    onError: (error) =>
+      toast.error(error instanceof Error ? error.message : "Payment settings could not be saved."),
   });
   const broadcastMutation = useMutation({
     mutationFn: () => adminApi.broadcast(broadcast),
@@ -295,489 +379,663 @@ function AdminDashboard() {
       rsvpDeadline: item.rsvpDeadline ?? "",
       status: item.status === "PUBLISHED" ? "PUBLISHED" : "DRAFT",
     });
-    document.getElementById("event-details")?.scrollIntoView({ behavior: "smooth" });
+    setActiveSection("events");
+    requestAnimationFrame(() =>
+      document
+        .getElementById("admin-content")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
   }
 
+  const activeLabel = adminNavigation
+    .flatMap((group) => group.items)
+    .find((item) => item.id === activeSection)?.label;
+  const selectSection = (section: AdminSectionId) => {
+    setActiveSection(section);
+    setMobileNavigationOpen(false);
+    requestAnimationFrame(() => document.getElementById("admin-content")?.focus());
+  };
+
   return (
-    <>
-      <div className="gradient-hero">
-        <Section className="py-14 sm:py-20">
-          <p className="eyebrow">Administrator workspace</p>
-          <h1 className="mt-4 max-w-3xl text-4xl leading-tight tracking-tight sm:text-5xl">
-            Run the club from one calm room.
-          </h1>
-          <p className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground">
-            Members, monthly reads, events, announcements and email communication all live here.
-          </p>
-        </Section>
-      </div>
-
-      <Section className="space-y-6 py-10 sm:py-14">
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
-          <Stat label="Members" value={data.stats.members} />
-          <Stat label="Approved" value={data.stats.approvedMembers} />
-          <Stat label="Subscribers" value={data.stats.subscribers} />
-          <Stat label="Books" value={data.stats.books} />
-          <Stat label="Events" value={data.stats.events} />
+    <div className="min-h-dvh bg-background lg:pl-72">
+      <aside className="fixed inset-y-0 left-0 z-30 hidden w-72 overflow-y-auto border-r border-border/60 bg-card/95 px-5 py-7 shadow-soft lg:block">
+        <AdminNavigation activeSection={activeSection} onSelect={selectSection} />
+      </aside>
+      <header className="sticky top-0 z-20 border-b border-border/60 bg-background/95 px-4 py-3 backdrop-blur lg:px-10">
+        <div className="mx-auto flex max-w-7xl items-center gap-3">
+          <Sheet open={mobileNavigationOpen} onOpenChange={setMobileNavigationOpen}>
+            <SheetTrigger asChild>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                className="lg:hidden"
+                aria-label="Open admin navigation"
+              >
+                <Menu aria-hidden="true" />
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[min(19rem,88vw)] p-5">
+              <SheetHeader className="sr-only">
+                <SheetTitle>Admin navigation</SheetTitle>
+              </SheetHeader>
+              <AdminNavigation activeSection={activeSection} onSelect={selectSection} />
+            </SheetContent>
+          </Sheet>
+          <div className="min-w-0">
+            <p className="eyebrow">Administrator workspace</p>
+            <h1 className="font-display text-xl tracking-tight sm:text-2xl">{activeLabel}</h1>
+          </div>
         </div>
+      </header>
 
-        <div className="grid gap-6 lg:grid-cols-2">
-          <Card className="rounded-4xl border-border/60 bg-card/80">
-            <CardContent className="p-7 sm:p-8">
-              <div className="flex items-center gap-3">
-                <Mail className="h-5 w-5 text-primary" aria-hidden="true" />
-                <div>
-                  <p className="eyebrow">Communication</p>
-                  <h2 className="mt-2 font-display text-2xl">Send a club email</h2>
-                </div>
-              </div>
-              <form onSubmit={submitBroadcast} className="mt-6 space-y-4">
-                <select
-                  value={broadcast.audience}
-                  onChange={(event) =>
-                    setBroadcast((old) => ({
-                      ...old,
-                      audience: event.target.value as typeof old.audience,
-                    }))
-                  }
-                  className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
-                  aria-label="Email audience"
-                >
-                  <option value="MEMBERS">Approved members</option>
-                  <option value="SUBSCRIBERS">Newsletter subscribers</option>
-                  <option value="ALL">Members and subscribers</option>
-                </select>
-                <Input
-                  value={broadcast.subject}
-                  onChange={(event) =>
-                    setBroadcast((old) => ({ ...old, subject: event.target.value }))
-                  }
-                  placeholder="Subject"
-                  maxLength={200}
-                  required
-                />
-                <Textarea
-                  value={broadcast.body}
-                  onChange={(event) =>
-                    setBroadcast((old) => ({ ...old, body: event.target.value }))
-                  }
-                  placeholder="Write your message…"
-                  className="min-h-36"
-                  maxLength={20000}
-                  required
-                />
-                <p className="text-xs text-muted-foreground">
-                  Delivery uses the configured email provider. In development, messages are printed
-                  to the server console.
+      <main id="admin-content" tabIndex={-1} className="outline-none">
+        <Section className="space-y-6 py-7 sm:py-10">
+          {activeSection === "overview" ? (
+            <>
+              <div>
+                <p className="eyebrow">Club at a glance</p>
+                <h2 className="mt-2 font-display text-3xl tracking-tight">
+                  Run the club from one calm room.
+                </h2>
+                <p className="mt-3 max-w-2xl text-sm leading-relaxed text-muted-foreground">
+                  Choose a section from the navigation to manage members, gatherings, community
+                  activity and communications.
                 </p>
-                <Button type="submit" variant="hero" disabled={broadcastMutation.isPending}>
-                  {broadcastMutation.isPending ? "Sending…" : "Send email"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-
-          <Card id="event-details" className="rounded-4xl border-border/60 bg-card/80">
-            <CardContent className="p-7 sm:p-8">
-              <div className="flex items-center gap-3">
-                <ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />
-                <div>
-                  <p className="eyebrow">Current read</p>
-                  <h2 className="mt-2 font-display text-2xl">Update the monthly book</h2>
-                </div>
               </div>
-              <form onSubmit={submitRead} className="mt-6 space-y-4">
-                <select
-                  value={read.bookId}
-                  onChange={(event) => {
-                    const selected = data.books.find((book) => book.id === event.target.value);
-                    setRead((old) => ({ ...old, bookId: event.target.value }));
-                    setExistingReadCover(selected?.coverUrl ?? null);
-                    setReadCoverImage(null);
-                    setRemoveReadCover(false);
-                  }}
-                  className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
-                  aria-label="Existing book"
-                >
-                  <option value="">Select an existing book or add one below</option>
-                  {data.books.map((book) => (
-                    <option key={book.id} value={book.id}>
-                      {book.title}
-                      {book.author ? ` — ${book.author}` : ""}
-                    </option>
-                  ))}
-                </select>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    value={read.title}
-                    onChange={(event) => setRead((old) => ({ ...old, title: event.target.value }))}
-                    placeholder="New book title"
-                  />
-                  <Input
-                    value={read.author}
-                    onChange={(event) => setRead((old) => ({ ...old, author: event.target.value }))}
-                    placeholder="Author"
-                  />
-                </div>
-                <div className="rounded-3xl border border-dashed border-border bg-background/60 p-4">
-                  {readCoverImage || (existingReadCover && !removeReadCover) ? (
-                    <img
-                      src={
-                        readCoverImage ? URL.createObjectURL(readCoverImage) : existingReadCover!
+              <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                <Stat label="Members" value={data.stats.members} />
+                <Stat label="Approved" value={data.stats.approvedMembers} />
+                <Stat label="Subscribers" value={data.stats.subscribers} />
+                <Stat label="Books" value={data.stats.books} />
+                <Stat label="Events" value={data.stats.events} />
+              </div>
+            </>
+          ) : null}
+
+          <div className="space-y-6">
+            {activeSection === "payment-settings" ? (
+              <Card className="rounded-4xl border-border/60 bg-card/80">
+                <CardContent className="p-7 sm:p-8">
+                  <div className="flex items-center gap-3">
+                    <CreditCard className="h-5 w-5 text-primary" aria-hidden="true" />
+                    <div>
+                      <p className="eyebrow">Payments</p>
+                      <h2 className="mt-2 font-display text-2xl">Payment method</h2>
+                    </div>
+                  </div>
+                  {paymentSettings.isPending ? (
+                    <p className="mt-6 text-sm text-muted-foreground" aria-live="polite">
+                      Loading payment settings…
+                    </p>
+                  ) : paymentSettings.isError ? (
+                    <p className="mt-6 text-sm text-destructive" role="alert">
+                      Payment settings could not be loaded. Refresh and try again.
+                    </p>
+                  ) : !paymentForm ? (
+                    <p className="mt-6 text-sm text-destructive" role="alert">
+                      Payment settings could not be loaded. Refresh and try again.
+                    </p>
+                  ) : (
+                    <form
+                      className="mt-6 space-y-5"
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        paymentSettingsMutation.mutate();
+                      }}
+                    >
+                      <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/60 p-4">
+                        <div>
+                          <label htmlFor="online-payments" className="text-sm font-medium">
+                            Online payments enabled
+                          </label>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            Enable secure online checkout for contributions and paid memberships.
+                          </p>
+                        </div>
+                        <Switch
+                          id="online-payments"
+                          checked={paymentForm.onlinePaymentsEnabled}
+                          onCheckedChange={(checked) =>
+                            setPaymentForm((current) =>
+                              current ? { ...current, onlinePaymentsEnabled: checked } : current,
+                            )
+                          }
+                          aria-label="Online payments enabled"
+                        />
+                      </div>
+                      <div>
+                        <label htmlFor="manual-payment-message" className="text-sm font-medium">
+                          Manual-payment message
+                        </label>
+                        <Textarea
+                          id="manual-payment-message"
+                          value={paymentForm.manualPaymentMessage}
+                          onChange={(event) =>
+                            setPaymentForm((current) =>
+                              current
+                                ? { ...current, manualPaymentMessage: event.target.value }
+                                : current,
+                            )
+                          }
+                          className="mt-2 min-h-40 whitespace-pre-wrap"
+                          maxLength={5000}
+                          required
+                          aria-describedby="manual-payment-message-help"
+                        />
+                        <p
+                          id="manual-payment-message-help"
+                          className="mt-2 text-xs text-muted-foreground"
+                        >
+                          Shown when online payments are off. Line breaks are preserved. Do not
+                          include provider secrets, API keys, or passwords.
+                        </p>
+                      </div>
+                      <Button
+                        type="submit"
+                        variant="hero"
+                        disabled={paymentSettingsMutation.isPending}
+                      >
+                        {paymentSettingsMutation.isPending ? "Saving…" : "Save payment settings"}
+                      </Button>
+                    </form>
+                  )}
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {activeSection === "broadcasts" ? (
+              <Card className="rounded-4xl border-border/60 bg-card/80">
+                <CardContent className="p-7 sm:p-8">
+                  <div className="flex items-center gap-3">
+                    <Mail className="h-5 w-5 text-primary" aria-hidden="true" />
+                    <div>
+                      <p className="eyebrow">Communication</p>
+                      <h2 className="mt-2 font-display text-2xl">Send a club email</h2>
+                    </div>
+                  </div>
+                  <form onSubmit={submitBroadcast} className="mt-6 space-y-4">
+                    <select
+                      value={broadcast.audience}
+                      onChange={(event) =>
+                        setBroadcast((old) => ({
+                          ...old,
+                          audience: event.target.value as typeof old.audience,
+                        }))
                       }
-                      alt="Book cover preview"
-                      className="mb-4 h-48 w-32 rounded-2xl object-cover shadow-soft"
+                      className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
+                      aria-label="Email audience"
+                    >
+                      <option value="MEMBERS">Approved members</option>
+                      <option value="SUBSCRIBERS">Newsletter subscribers</option>
+                      <option value="ALL">Members and subscribers</option>
+                    </select>
+                    <Input
+                      value={broadcast.subject}
+                      onChange={(event) =>
+                        setBroadcast((old) => ({ ...old, subject: event.target.value }))
+                      }
+                      placeholder="Subject"
+                      maxLength={200}
+                      required
                     />
-                  ) : null}
-                  <label className="flex cursor-pointer items-center gap-3 text-sm">
-                    <ImagePlus className="h-5 w-5 text-primary" aria-hidden="true" />
-                    <span className="min-w-0 flex-1">
-                      <span className="block font-medium">
-                        {existingReadCover ? "Replace book cover" : "Upload a book cover"}
-                      </span>
-                      <span className="block text-xs text-muted-foreground">
-                        {readCoverImage?.name ?? "JPG, PNG, WebP or GIF · maximum 8 MB"}
-                      </span>
-                    </span>
-                    <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      className="sr-only"
+                    <Textarea
+                      value={broadcast.body}
+                      onChange={(event) =>
+                        setBroadcast((old) => ({ ...old, body: event.target.value }))
+                      }
+                      placeholder="Write your message…"
+                      className="min-h-36"
+                      maxLength={20000}
+                      required
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Delivery uses the configured email provider. In development, messages are
+                      printed to the server console.
+                    </p>
+                    <Button type="submit" variant="hero" disabled={broadcastMutation.isPending}>
+                      {broadcastMutation.isPending ? "Sending…" : "Send email"}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {activeSection === "monthly-book" ? (
+              <Card id="event-details" className="rounded-4xl border-border/60 bg-card/80">
+                <CardContent className="p-7 sm:p-8">
+                  <div className="flex items-center gap-3">
+                    <ShieldCheck className="h-5 w-5 text-primary" aria-hidden="true" />
+                    <div>
+                      <p className="eyebrow">Current read</p>
+                      <h2 className="mt-2 font-display text-2xl">Update the monthly book</h2>
+                    </div>
+                  </div>
+                  <form onSubmit={submitRead} className="mt-6 space-y-4">
+                    <select
+                      value={read.bookId}
                       onChange={(event) => {
-                        const file = event.target.files?.[0] ?? null;
-                        if (
-                          file &&
-                          !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(
-                            file.type,
-                          )
-                        ) {
-                          toast.error("Choose a JPG, PNG, WebP, or GIF book cover.");
-                          event.target.value = "";
-                          return;
-                        }
-                        if (file && file.size > 8 * 1024 * 1024) {
-                          toast.error("The book cover must be smaller than 8 MB.");
-                          event.target.value = "";
-                          return;
-                        }
-                        setReadCoverImage(file);
+                        const selected = data.books.find((book) => book.id === event.target.value);
+                        setRead((old) => ({ ...old, bookId: event.target.value }));
+                        setExistingReadCover(selected?.coverUrl ?? null);
+                        setReadCoverImage(null);
                         setRemoveReadCover(false);
                       }}
-                    />
-                  </label>
-                  {readCoverImage || existingReadCover ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="mt-3"
-                      onClick={() => {
-                        setReadCoverImage(null);
-                        setRemoveReadCover(true);
-                      }}
+                      className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
+                      aria-label="Existing book"
                     >
-                      Remove cover
+                      <option value="">Select an existing book or add one below</option>
+                      {data.books.map((book) => (
+                        <option key={book.id} value={book.id}>
+                          {book.title}
+                          {book.author ? ` — ${book.author}` : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Input
+                        value={read.title}
+                        onChange={(event) =>
+                          setRead((old) => ({ ...old, title: event.target.value }))
+                        }
+                        placeholder="New book title"
+                      />
+                      <Input
+                        value={read.author}
+                        onChange={(event) =>
+                          setRead((old) => ({ ...old, author: event.target.value }))
+                        }
+                        placeholder="Author"
+                      />
+                    </div>
+                    <div className="rounded-3xl border border-dashed border-border bg-background/60 p-4">
+                      {readCoverImage || (existingReadCover && !removeReadCover) ? (
+                        <img
+                          src={
+                            readCoverImage
+                              ? URL.createObjectURL(readCoverImage)
+                              : existingReadCover!
+                          }
+                          alt="Book cover preview"
+                          className="mb-4 h-48 w-32 rounded-2xl object-cover shadow-soft"
+                        />
+                      ) : null}
+                      <label className="flex cursor-pointer items-center gap-3 text-sm">
+                        <ImagePlus className="h-5 w-5 text-primary" aria-hidden="true" />
+                        <span className="min-w-0 flex-1">
+                          <span className="block font-medium">
+                            {existingReadCover ? "Replace book cover" : "Upload a book cover"}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {readCoverImage?.name ?? "JPG, PNG, WebP or GIF · maximum 8 MB"}
+                          </span>
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="sr-only"
+                          onChange={(event) => {
+                            const file = event.target.files?.[0] ?? null;
+                            if (
+                              file &&
+                              !["image/jpeg", "image/png", "image/webp", "image/gif"].includes(
+                                file.type,
+                              )
+                            ) {
+                              toast.error("Choose a JPG, PNG, WebP, or GIF book cover.");
+                              event.target.value = "";
+                              return;
+                            }
+                            if (file && file.size > 8 * 1024 * 1024) {
+                              toast.error("The book cover must be smaller than 8 MB.");
+                              event.target.value = "";
+                              return;
+                            }
+                            setReadCoverImage(file);
+                            setRemoveReadCover(false);
+                          }}
+                        />
+                      </label>
+                      {readCoverImage || existingReadCover ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => {
+                            setReadCoverImage(null);
+                            setRemoveReadCover(true);
+                          }}
+                        >
+                          Remove cover
+                        </Button>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Input
+                        value={read.startDate}
+                        onChange={(event) =>
+                          setRead((old) => ({ ...old, startDate: event.target.value }))
+                        }
+                        type="date"
+                        aria-label="Read start date"
+                        required
+                      />
+                      <Input
+                        value={read.endDate}
+                        onChange={(event) =>
+                          setRead((old) => ({ ...old, endDate: event.target.value }))
+                        }
+                        type="date"
+                        aria-label="Read end date"
+                        required
+                      />
+                    </div>
+                    <Button type="submit" variant="hero" disabled={readMutation.isPending}>
+                      {readMutation.isPending
+                        ? readCoverImage
+                          ? "Uploading cover…"
+                          : "Updating…"
+                        : "Set current read"}
                     </Button>
-                  ) : null}
-                </div>
-                <div className="grid gap-4 sm:grid-cols-2">
-                  <Input
-                    value={read.startDate}
-                    onChange={(event) =>
-                      setRead((old) => ({ ...old, startDate: event.target.value }))
-                    }
-                    type="date"
-                    aria-label="Read start date"
-                    required
-                  />
-                  <Input
-                    value={read.endDate}
-                    onChange={(event) =>
-                      setRead((old) => ({ ...old, endDate: event.target.value }))
-                    }
-                    type="date"
-                    aria-label="Read end date"
-                    required
-                  />
-                </div>
-                <Button type="submit" variant="hero" disabled={readMutation.isPending}>
-                  {readMutation.isPending
-                    ? readCoverImage
-                      ? "Uploading cover…"
-                      : "Updating…"
-                    : "Set current read"}
-                </Button>
-              </form>
-              <form onSubmit={submitProgress} className="mt-8 border-t border-border/60 pt-6">
-                <div className="flex items-center justify-between gap-4">
-                  <label htmlFor="reading-progress" className="text-sm font-medium">
-                    Reading progress
-                  </label>
-                  <span className="font-display text-2xl text-primary">{progress}%</span>
-                </div>
-                <input
-                  id="reading-progress"
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={progress}
-                  onChange={(event) => setProgress(Number(event.target.value))}
-                  className="mt-4 w-full accent-primary"
-                />
-                <Button
-                  type="submit"
-                  variant="outline"
-                  className="mt-4"
-                  disabled={!data.currentBook || progressMutation.isPending}
-                >
-                  Update progress
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-
-        <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr]">
-          <Card className="rounded-4xl border-border/60 bg-card/80">
-            <CardContent className="p-7 sm:p-8">
-              <div className="flex items-center gap-3">
-                <CalendarPlus className="h-5 w-5 text-primary" aria-hidden="true" />
-                <div>
-                  <p className="eyebrow">Calendar</p>
-                  <h2 className="mt-2 font-display text-2xl">
-                    {editingEventId ? "Edit event details" : "Add an event"}
-                  </h2>
-                </div>
-              </div>
-              <form onSubmit={submitEvent} className="mt-6 grid gap-4 sm:grid-cols-2">
-                <div className="sm:col-span-2 rounded-3xl border border-dashed border-border bg-background/60 p-4">
-                  {eventImage || (existingEventImage && !removeEventImage) ? (
-                    <img
-                      src={eventImage ? URL.createObjectURL(eventImage) : existingEventImage!}
-                      alt="Event preview"
-                      className="mb-4 h-40 w-full rounded-2xl object-cover"
-                    />
-                  ) : null}
-                  <label className="flex cursor-pointer items-center gap-3 text-sm">
-                    <ImagePlus className="h-5 w-5 text-primary" />
-                    <span className="flex-1">
-                      <span className="block font-medium">
-                        {existingEventImage ? "Replace event image" : "Add event image"}
-                      </span>
-                      <span className="block text-xs text-muted-foreground">
-                        {eventImage?.name ?? "JPG, PNG, WebP or GIF · maximum 8 MB"}
-                      </span>
-                    </span>
+                  </form>
+                  <form onSubmit={submitProgress} className="mt-8 border-t border-border/60 pt-6">
+                    <div className="flex items-center justify-between gap-4">
+                      <label htmlFor="reading-progress" className="text-sm font-medium">
+                        Reading progress
+                      </label>
+                      <span className="font-display text-2xl text-primary">{progress}%</span>
+                    </div>
                     <input
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp,image/gif"
-                      className="sr-only"
-                      onChange={(event) => {
-                        setEventImage(event.target.files?.[0] ?? null);
-                        setRemoveEventImage(false);
-                      }}
+                      id="reading-progress"
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={progress}
+                      onChange={(event) => setProgress(Number(event.target.value))}
+                      className="mt-4 w-full accent-primary"
                     />
-                  </label>
-                  {eventImage || existingEventImage ? (
                     <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="mt-3"
-                      onClick={() => {
-                        setEventImage(null);
-                        setRemoveEventImage(true);
-                      }}
+                      type="submit"
+                      variant="outline"
+                      className="mt-4"
+                      disabled={!data.currentBook || progressMutation.isPending}
                     >
-                      Remove image
+                      Update progress
                     </Button>
-                  ) : null}
-                </div>
-                <Input
-                  className="sm:col-span-2"
-                  value={event.title}
-                  onChange={(e) => setEvent((old) => ({ ...old, title: e.target.value }))}
-                  placeholder="Event title"
-                  required
-                />
-                <Textarea
-                  className="sm:col-span-2"
-                  value={event.description}
-                  onChange={(e) => setEvent((old) => ({ ...old, description: e.target.value }))}
-                  placeholder="Description"
-                  maxLength={5000}
-                />
-                <Input
-                  value={event.eventDate}
-                  onChange={(e) => setEvent((old) => ({ ...old, eventDate: e.target.value }))}
-                  type="date"
-                  aria-label="Event date"
-                  required
-                />
-                <Input
-                  value={event.venueName}
-                  onChange={(e) => setEvent((old) => ({ ...old, venueName: e.target.value }))}
-                  placeholder="Venue name"
-                  required
-                />
-                <Input
-                  value={event.startTime}
-                  onChange={(e) => setEvent((old) => ({ ...old, startTime: e.target.value }))}
-                  type="time"
-                  aria-label="Start time"
-                  required
-                />
-                <Input
-                  value={event.endTime}
-                  onChange={(e) => setEvent((old) => ({ ...old, endTime: e.target.value }))}
-                  type="time"
-                  aria-label="End time"
-                />
-                <Input
-                  value={event.venueAddress}
-                  onChange={(e) => setEvent((old) => ({ ...old, venueAddress: e.target.value }))}
-                  placeholder="Venue address"
-                />
-                <Input
-                  value={event.theme}
-                  onChange={(e) => setEvent((old) => ({ ...old, theme: e.target.value }))}
-                  placeholder="Theme"
-                />
-                <Input
-                  value={event.capacity}
-                  onChange={(e) => setEvent((old) => ({ ...old, capacity: e.target.value }))}
-                  type="number"
-                  min="1"
-                  max="1000"
-                  placeholder="Capacity"
-                  required
-                />
-                <Input
-                  value={event.contributionAmount}
-                  onChange={(e) =>
-                    setEvent((old) => ({ ...old, contributionAmount: e.target.value }))
-                  }
-                  type="number"
-                  min="0"
-                  placeholder="Contribution (ZAR)"
-                />
-                <Input
-                  value={event.rsvpDeadline}
-                  onChange={(e) => setEvent((old) => ({ ...old, rsvpDeadline: e.target.value }))}
-                  type="date"
-                  aria-label="RSVP deadline"
-                />
-                <select
-                  value={event.status}
-                  onChange={(e) =>
-                    setEvent((old) => ({ ...old, status: e.target.value as typeof old.status }))
-                  }
-                  className="h-10 rounded-xl border border-input bg-card px-3 text-sm"
-                  aria-label="Event status"
-                >
-                  <option value="PUBLISHED">Publish now</option>
-                  <option value="DRAFT">Save as draft</option>
-                </select>
-                <Button
-                  type="submit"
-                  variant="hero"
-                  className="sm:col-span-2"
-                  disabled={eventMutation.isPending}
-                >
-                  {eventMutation.isPending
-                    ? "Saving…"
-                    : editingEventId
-                      ? "Update event"
-                      : "Create event"}
-                </Button>
-                {editingEventId ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    className="sm:col-span-2"
-                    onClick={() => {
-                      setEditingEventId(null);
-                      setExistingEventImage(null);
-                      setEventImage(null);
-                      setRemoveEventImage(false);
-                    }}
-                  >
-                    Cancel editing
-                  </Button>
-                ) : null}
-              </form>
-            </CardContent>
-          </Card>
+                  </form>
+                </CardContent>
+              </Card>
+            ) : null}
+          </div>
 
-          <Card className="rounded-4xl border-border/60 bg-card/80">
-            <CardContent className="p-7 sm:p-8">
-              <div className="flex items-center gap-3">
-                <Mail className="h-5 w-5 text-primary" aria-hidden="true" />
-                <div>
-                  <p className="eyebrow">Club note</p>
-                  <h2 className="mt-2 font-display text-2xl">Publish an announcement</h2>
-                </div>
-              </div>
-              <form onSubmit={submitAnnouncement} className="mt-6 space-y-4">
-                <Input
-                  value={announcement.title}
-                  onChange={(e) => setAnnouncement((old) => ({ ...old, title: e.target.value }))}
-                  placeholder="Announcement title"
-                  required
-                />
-                <Textarea
-                  value={announcement.body}
-                  onChange={(e) => setAnnouncement((old) => ({ ...old, body: e.target.value }))}
-                  placeholder="Announcement message"
-                  className="min-h-36"
-                  maxLength={5000}
-                  required
-                />
-                <select
-                  value={announcement.type}
-                  onChange={(e) =>
-                    setAnnouncement((old) => ({ ...old, type: e.target.value as typeof old.type }))
-                  }
-                  className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
-                  aria-label="Announcement type"
-                >
-                  <option value="GENERAL">General</option>
-                  <option value="EVENT">Event</option>
-                  <option value="BOOK">Book</option>
-                  <option value="URGENT">Urgent</option>
-                </select>
-                <Button type="submit" variant="hero" disabled={announcementMutation.isPending}>
-                  {announcementMutation.isPending ? "Publishing…" : "Publish note"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
+          <div className="space-y-6">
+            {activeSection === "events" ? (
+              <Card className="rounded-4xl border-border/60 bg-card/80">
+                <CardContent className="p-7 sm:p-8">
+                  <div className="flex items-center gap-3">
+                    <CalendarPlus className="h-5 w-5 text-primary" aria-hidden="true" />
+                    <div>
+                      <p className="eyebrow">Calendar</p>
+                      <h2 className="mt-2 font-display text-2xl">
+                        {editingEventId ? "Edit event details" : "Add an event"}
+                      </h2>
+                    </div>
+                  </div>
+                  <form onSubmit={submitEvent} className="mt-6 grid gap-4 sm:grid-cols-2">
+                    <div className="sm:col-span-2 rounded-3xl border border-dashed border-border bg-background/60 p-4">
+                      {eventImage || (existingEventImage && !removeEventImage) ? (
+                        <img
+                          src={eventImage ? URL.createObjectURL(eventImage) : existingEventImage!}
+                          alt="Event preview"
+                          className="mb-4 h-40 w-full rounded-2xl object-cover"
+                        />
+                      ) : null}
+                      <label className="flex cursor-pointer items-center gap-3 text-sm">
+                        <ImagePlus className="h-5 w-5 text-primary" />
+                        <span className="flex-1">
+                          <span className="block font-medium">
+                            {existingEventImage ? "Replace event image" : "Add event image"}
+                          </span>
+                          <span className="block text-xs text-muted-foreground">
+                            {eventImage?.name ?? "JPG, PNG, WebP or GIF · maximum 8 MB"}
+                          </span>
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp,image/gif"
+                          className="sr-only"
+                          onChange={(event) => {
+                            setEventImage(event.target.files?.[0] ?? null);
+                            setRemoveEventImage(false);
+                          }}
+                        />
+                      </label>
+                      {eventImage || existingEventImage ? (
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="mt-3"
+                          onClick={() => {
+                            setEventImage(null);
+                            setRemoveEventImage(true);
+                          }}
+                        >
+                          Remove image
+                        </Button>
+                      ) : null}
+                    </div>
+                    <Input
+                      className="sm:col-span-2"
+                      value={event.title}
+                      onChange={(e) => setEvent((old) => ({ ...old, title: e.target.value }))}
+                      placeholder="Event title"
+                      required
+                    />
+                    <Textarea
+                      className="sm:col-span-2"
+                      value={event.description}
+                      onChange={(e) => setEvent((old) => ({ ...old, description: e.target.value }))}
+                      placeholder="Description"
+                      maxLength={5000}
+                    />
+                    <Input
+                      value={event.eventDate}
+                      onChange={(e) => setEvent((old) => ({ ...old, eventDate: e.target.value }))}
+                      type="date"
+                      aria-label="Event date"
+                      required
+                    />
+                    <Input
+                      value={event.venueName}
+                      onChange={(e) => setEvent((old) => ({ ...old, venueName: e.target.value }))}
+                      placeholder="Venue name"
+                      required
+                    />
+                    <Input
+                      value={event.startTime}
+                      onChange={(e) => setEvent((old) => ({ ...old, startTime: e.target.value }))}
+                      type="time"
+                      aria-label="Start time"
+                      required
+                    />
+                    <Input
+                      value={event.endTime}
+                      onChange={(e) => setEvent((old) => ({ ...old, endTime: e.target.value }))}
+                      type="time"
+                      aria-label="End time"
+                    />
+                    <Input
+                      value={event.venueAddress}
+                      onChange={(e) =>
+                        setEvent((old) => ({ ...old, venueAddress: e.target.value }))
+                      }
+                      placeholder="Venue address"
+                    />
+                    <Input
+                      value={event.theme}
+                      onChange={(e) => setEvent((old) => ({ ...old, theme: e.target.value }))}
+                      placeholder="Theme"
+                    />
+                    <Input
+                      value={event.capacity}
+                      onChange={(e) => setEvent((old) => ({ ...old, capacity: e.target.value }))}
+                      type="number"
+                      min="1"
+                      max="1000"
+                      placeholder="Capacity"
+                      required
+                    />
+                    <Input
+                      value={event.contributionAmount}
+                      onChange={(e) =>
+                        setEvent((old) => ({ ...old, contributionAmount: e.target.value }))
+                      }
+                      type="number"
+                      min="0"
+                      placeholder="Contribution (ZAR)"
+                    />
+                    <Input
+                      value={event.rsvpDeadline}
+                      onChange={(e) =>
+                        setEvent((old) => ({ ...old, rsvpDeadline: e.target.value }))
+                      }
+                      type="date"
+                      aria-label="RSVP deadline"
+                    />
+                    <select
+                      value={event.status}
+                      onChange={(e) =>
+                        setEvent((old) => ({ ...old, status: e.target.value as typeof old.status }))
+                      }
+                      className="h-10 rounded-xl border border-input bg-card px-3 text-sm"
+                      aria-label="Event status"
+                    >
+                      <option value="PUBLISHED">Publish now</option>
+                      <option value="DRAFT">Save as draft</option>
+                    </select>
+                    <Button
+                      type="submit"
+                      variant="hero"
+                      className="sm:col-span-2"
+                      disabled={eventMutation.isPending}
+                    >
+                      {eventMutation.isPending
+                        ? "Saving…"
+                        : editingEventId
+                          ? "Update event"
+                          : "Create event"}
+                    </Button>
+                    {editingEventId ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        className="sm:col-span-2"
+                        onClick={() => {
+                          setEditingEventId(null);
+                          setExistingEventImage(null);
+                          setEventImage(null);
+                          setRemoveEventImage(false);
+                        }}
+                      >
+                        Cancel editing
+                      </Button>
+                    ) : null}
+                  </form>
+                </CardContent>
+              </Card>
+            ) : null}
 
-        <MembersPanel
-          members={data.members}
-          onToggle={(id, approved) => memberMutation.mutate({ id, approved })}
-          pending={memberMutation.isPending}
-        />
-        <EventAdminList
-          events={adminEvents.data ?? []}
-          onEdit={editEvent}
-          onDelete={(id) => deleteEventMutation.mutate(id)}
-          pending={deleteEventMutation.isPending}
-        />
-        <AdminModeration />
-        <div className="grid gap-6 lg:grid-cols-2">
-          <ListPanel
-            title="Newsletter subscribers"
-            items={data.subscribers
-              .filter((item) => item.subscribed)
-              .slice(0, 12)
-              .map((item) => item.email)}
-            empty="No subscribers yet."
-          />
-        </div>
-      </Section>
-    </>
+            {activeSection === "announcements" ? (
+              <Card className="rounded-4xl border-border/60 bg-card/80">
+                <CardContent className="p-7 sm:p-8">
+                  <div className="flex items-center gap-3">
+                    <Mail className="h-5 w-5 text-primary" aria-hidden="true" />
+                    <div>
+                      <p className="eyebrow">Club note</p>
+                      <h2 className="mt-2 font-display text-2xl">Publish an announcement</h2>
+                    </div>
+                  </div>
+                  <form onSubmit={submitAnnouncement} className="mt-6 space-y-4">
+                    <Input
+                      value={announcement.title}
+                      onChange={(e) =>
+                        setAnnouncement((old) => ({ ...old, title: e.target.value }))
+                      }
+                      placeholder="Announcement title"
+                      required
+                    />
+                    <Textarea
+                      value={announcement.body}
+                      onChange={(e) => setAnnouncement((old) => ({ ...old, body: e.target.value }))}
+                      placeholder="Announcement message"
+                      className="min-h-36"
+                      maxLength={5000}
+                      required
+                    />
+                    <select
+                      value={announcement.type}
+                      onChange={(e) =>
+                        setAnnouncement((old) => ({
+                          ...old,
+                          type: e.target.value as typeof old.type,
+                        }))
+                      }
+                      className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
+                      aria-label="Announcement type"
+                    >
+                      <option value="GENERAL">General</option>
+                      <option value="EVENT">Event</option>
+                      <option value="BOOK">Book</option>
+                      <option value="URGENT">Urgent</option>
+                    </select>
+                    <Button type="submit" variant="hero" disabled={announcementMutation.isPending}>
+                      {announcementMutation.isPending ? "Publishing…" : "Publish note"}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            ) : null}
+          </div>
+
+          {activeSection === "members" ? (
+            <MembersPanel
+              members={data.members}
+              onToggle={(id, approved) => memberMutation.mutate({ id, approved })}
+              pending={memberMutation.isPending}
+            />
+          ) : null}
+          {activeSection === "events" ? (
+            <EventAdminList
+              events={adminEvents.data ?? []}
+              onEdit={editEvent}
+              onDelete={(id) => deleteEventMutation.mutate(id)}
+              pending={deleteEventMutation.isPending}
+            />
+          ) : null}
+          {(["reviews", "reading-room", "suggestions", "polls"] as AdminSectionId[]).includes(
+            activeSection,
+          ) ? (
+            <AdminModeration
+              activeSection={activeSection as "reviews" | "reading-room" | "suggestions" | "polls"}
+            />
+          ) : null}
+          {activeSection === "subscribers" ? (
+            <div className="grid gap-6 lg:grid-cols-2">
+              <ListPanel
+                title="Newsletter subscribers"
+                items={data.subscribers
+                  .filter((item) => item.subscribed)
+                  .slice(0, 12)
+                  .map((item) => item.email)}
+                empty="No subscribers yet."
+              />
+            </div>
+          ) : null}
+        </Section>
+      </main>
+    </div>
   );
 }
 
@@ -842,7 +1100,11 @@ function EventAdminList({
   );
 }
 
-function AdminModeration() {
+function AdminModeration({
+  activeSection,
+}: {
+  activeSection: "reviews" | "reading-room" | "suggestions" | "polls";
+}) {
   const queryClient = useQueryClient();
   const content = useQuery({ queryKey: ["admin-content"], queryFn: adminApi.getContent });
   const [poll, setPoll] = useState({ title: "", options: "", endsAt: "", hideResults: true });
@@ -941,281 +1203,344 @@ function AdminModeration() {
       </Card>
     );
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <Card className="rounded-4xl border-border/60 bg-card/80">
-        <CardContent className="p-7">
-          <p className="eyebrow">Reviews & comments</p>
-          <h2 className="mt-2 font-display text-2xl">Moderation queue</h2>
-          <div className="mt-5 max-h-[32rem] space-y-3 overflow-y-auto">
-            {data.reviews.map((review) => (
-              <div key={review.id} className="rounded-2xl bg-accent/40 p-4">
-                <p className="text-sm font-medium">
-                  {review.bookTitle} · {review.memberName}
-                </p>
-                <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">{review.body}</p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Badge>{review.status.toLowerCase()}</Badge>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => reviewStatus.mutate({ id: review.id, status: "PUBLISHED" })}
-                  >
-                    Publish
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={() => reviewStatus.mutate({ id: review.id, status: "HIDDEN" })}
-                  >
-                    Hide
-                  </Button>
+    <div className="space-y-6">
+      {activeSection === "reviews" ? (
+        <Card className="rounded-4xl border-border/60 bg-card/80">
+          <CardContent className="p-7">
+            <p className="eyebrow">Reviews & comments</p>
+            <h2 className="mt-2 font-display text-2xl">Moderation queue</h2>
+            <div className="mt-5 max-h-[32rem] space-y-3 overflow-y-auto">
+              {data.reviews.map((review) => (
+                <div key={review.id} className="rounded-2xl bg-accent/40 p-4">
+                  <p className="text-sm font-medium">
+                    {review.bookTitle} · {review.memberName}
+                  </p>
+                  <p className="mt-2 line-clamp-3 text-xs text-muted-foreground">{review.body}</p>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Badge>{review.status.toLowerCase()}</Badge>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => reviewStatus.mutate({ id: review.id, status: "PUBLISHED" })}
+                    >
+                      Publish
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => reviewStatus.mutate({ id: review.id, status: "HIDDEN" })}
+                    >
+                      Hide
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="sm" variant="destructive">
+                          Delete
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Delete this review?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            The review and all of its comments will be permanently removed.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancel</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => removeReview.mutate(review.id)}>
+                            Delete review
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                </div>
+              ))}
+              {data.comments.map((comment) => (
+                <div
+                  key={comment.id}
+                  className="flex gap-3 rounded-2xl border border-border/60 p-4"
+                >
+                  <div className="flex-1">
+                    <p className="text-xs font-medium">{comment.memberName}</p>
+                    <p className="mt-1 text-sm text-muted-foreground">{comment.body}</p>
+                  </div>
                   <AlertDialog>
                     <AlertDialogTrigger asChild>
-                      <Button size="sm" variant="destructive">
-                        Delete
+                      <Button size="icon" variant="ghost" aria-label="Remove comment">
+                        <Trash2 />
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>
                       <AlertDialogHeader>
-                        <AlertDialogTitle>Delete this review?</AlertDialogTitle>
+                        <AlertDialogTitle>Remove this comment?</AlertDialogTitle>
                         <AlertDialogDescription>
-                          The review and all of its comments will be permanently removed.
+                          It will disappear from the published review conversation.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
-                        <AlertDialogAction onClick={() => removeReview.mutate(review.id)}>
-                          Delete review
+                        <AlertDialogAction onClick={() => removeComment.mutate(comment.id)}>
+                          Remove
                         </AlertDialogAction>
                       </AlertDialogFooter>
                     </AlertDialogContent>
                   </AlertDialog>
-                </div>
-              </div>
-            ))}
-            {data.comments.map((comment) => (
-              <div key={comment.id} className="flex gap-3 rounded-2xl border border-border/60 p-4">
-                <div className="flex-1">
-                  <p className="text-xs font-medium">{comment.memberName}</p>
-                  <p className="mt-1 text-sm text-muted-foreground">{comment.body}</p>
-                </div>
-                <AlertDialog>
-                  <AlertDialogTrigger asChild>
-                    <Button size="icon" variant="ghost" aria-label="Remove comment">
-                      <Trash2 />
-                    </Button>
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Remove this comment?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        It will disappear from the published review conversation.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Cancel</AlertDialogCancel>
-                      <AlertDialogAction onClick={() => removeComment.mutate(comment.id)}>
-                        Remove
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
-              </div>
-            ))}
-          </div>
-        </CardContent>
-      </Card>
-      <Card className="rounded-4xl border-border/60 bg-card/80 lg:col-span-2">
-        <CardContent className="p-7">
-          <p className="eyebrow">Reading Room posts</p>
-          <h2 className="mt-2 font-display text-2xl">Member post moderation</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Removed posts and their comments are hidden from members. You can restore a post if it
-            was removed accidentally.
-          </p>
-          <div className="mt-5 max-h-[32rem] space-y-3 overflow-y-auto">
-            {data.discussions.map((discussion) => (
-              <div key={discussion.id} className="rounded-2xl bg-accent/40 p-4">
-                <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <p className="font-medium">{discussion.title}</p>
-                    <p className="mt-1 text-xs text-muted-foreground">
-                      {discussion.memberName} ·{" "}
-                      {new Date(discussion.createdAt).toLocaleDateString()} ·{" "}
-                      {discussion.commentCount}{" "}
-                      {discussion.commentCount === 1 ? "comment" : "comments"}
-                    </p>
-                  </div>
-                  <Badge>{discussion.deletedAt ? "removed" : "visible"}</Badge>
-                </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
-                  {discussion.body}
-                </p>
-                {discussion.deletedAt ? (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="mt-4"
-                    disabled={moderateDiscussion.isPending}
-                    onClick={() =>
-                      moderateDiscussion.mutate({ id: discussion.id, action: "restore" })
-                    }
-                  >
-                    {moderateDiscussion.isPending ? "Saving…" : "Restore post"}
-                  </Button>
-                ) : (
-                  <AlertDialog>
-                    <AlertDialogTrigger asChild>
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        className="mt-4"
-                        disabled={moderateDiscussion.isPending}
-                      >
-                        Remove post
-                      </Button>
-                    </AlertDialogTrigger>
-                    <AlertDialogContent>
-                      <AlertDialogHeader>
-                        <AlertDialogTitle>Remove “{discussion.title}”?</AlertDialogTitle>
-                        <AlertDialogDescription>
-                          The post and its comments will be hidden from the Reading Room. This can
-                          be restored later.
-                        </AlertDialogDescription>
-                      </AlertDialogHeader>
-                      <label className="grid gap-2 text-sm font-medium">
-                        Moderation reason{" "}
-                        <span className="font-normal text-muted-foreground">
-                          (optional, never public)
-                        </span>
-                        <Textarea
-                          value={moderationReason}
-                          onChange={(event) => setModerationReason(event.target.value)}
-                          maxLength={500}
-                          placeholder="Optional internal note"
-                        />
-                      </label>
-                      <AlertDialogFooter>
-                        <AlertDialogCancel>Keep post</AlertDialogCancel>
-                        <AlertDialogAction
-                          disabled={moderateDiscussion.isPending}
-                          onClick={() =>
-                            moderateDiscussion.mutate({ id: discussion.id, action: "remove" })
-                          }
-                        >
-                          {moderateDiscussion.isPending ? "Removing…" : "Remove post"}
-                        </AlertDialogAction>
-                      </AlertDialogFooter>
-                    </AlertDialogContent>
-                  </AlertDialog>
-                )}
-              </div>
-            ))}
-            {!data.discussions.length ? (
-              <p className="rounded-2xl bg-accent/40 p-4 text-sm text-muted-foreground">
-                No Reading Room posts yet.
-              </p>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
-      <div className="space-y-6">
-        <Card className="rounded-4xl border-border/60 bg-card/80">
-          <CardContent className="p-7">
-            <p className="eyebrow">Suggestion box</p>
-            <h2 className="mt-2 font-display text-2xl">Member ideas</h2>
-            <div className="mt-5 space-y-3">
-              {data.suggestions.slice(0, 12).map((suggestion) => (
-                <div key={suggestion.id} className="rounded-2xl bg-accent/40 p-4">
-                  <p className="font-medium">{suggestion.title}</p>
-                  <p className="text-xs text-muted-foreground">
-                    {suggestion.memberName} · {suggestion.status.toLowerCase()}
-                  </p>
-                  <div className="mt-3 flex gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() =>
-                        setPoll((old) => ({
-                          ...old,
-                          options: [old.options.trim(), suggestion.title]
-                            .filter(Boolean)
-                            .join("\n"),
-                        }))
-                      }
-                    >
-                      Add to poll
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        suggestionStatus.mutate({ id: suggestion.id, status: "ACCEPTED" })
-                      }
-                    >
-                      Accept
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() =>
-                        suggestionStatus.mutate({ id: suggestion.id, status: "DECLINED" })
-                      }
-                    >
-                      Decline
-                    </Button>
-                  </div>
                 </div>
               ))}
             </div>
           </CardContent>
         </Card>
+      ) : null}
+      {activeSection === "reading-room" ? (
         <Card className="rounded-4xl border-border/60 bg-card/80">
           <CardContent className="p-7">
-            <p className="eyebrow">Book voting</p>
-            <h2 className="mt-2 font-display text-2xl">Open a community poll</h2>
-            <form
-              className="mt-5 space-y-3"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const options = poll.options.split("\n").filter((value) => value.trim());
-                if (poll.title.trim() && options.length >= 2) createPoll.mutate();
-                else toast.error("Add a title and at least two options.");
-              }}
-            >
-              <Input
-                value={poll.title}
-                onChange={(event) => setPoll((old) => ({ ...old, title: event.target.value }))}
-                placeholder="Poll title"
-              />
-              <Textarea
-                value={poll.options}
-                onChange={(event) => setPoll((old) => ({ ...old, options: event.target.value }))}
-                placeholder={"One candidate book per line\nBook two\nBook three"}
-              />
-              <Input
-                type="datetime-local"
-                value={poll.endsAt}
-                onChange={(event) => setPoll((old) => ({ ...old, endsAt: event.target.value }))}
-              />
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={poll.hideResults}
-                  onChange={(event) =>
-                    setPoll((old) => ({ ...old, hideResults: event.target.checked }))
-                  }
-                />{" "}
-                Hide results until the poll closes
-              </label>
-              <Button type="submit" variant="hero" disabled={createPoll.isPending}>
-                Open vote
-              </Button>
-            </form>
+            <p className="eyebrow">Reading Room posts</p>
+            <h2 className="mt-2 font-display text-2xl">Member post moderation</h2>
+            <p className="mt-2 text-sm text-muted-foreground">
+              Removed posts and their comments are hidden from members. You can restore a post if it
+              was removed accidentally.
+            </p>
+            <div className="mt-5 max-h-[32rem] space-y-3 overflow-y-auto">
+              {data.discussions.map((discussion) => (
+                <div key={discussion.id} className="rounded-2xl bg-accent/40 p-4">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <p className="font-medium">{discussion.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {discussion.memberName} ·{" "}
+                        {new Date(discussion.createdAt).toLocaleDateString()} ·{" "}
+                        {discussion.commentCount}{" "}
+                        {discussion.commentCount === 1 ? "comment" : "comments"}
+                      </p>
+                    </div>
+                    <Badge>{discussion.deletedAt ? "removed" : "visible"}</Badge>
+                  </div>
+                  <p className="mt-3 whitespace-pre-wrap text-sm text-muted-foreground">
+                    {discussion.body}
+                  </p>
+                  {discussion.deletedAt ? (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="mt-4"
+                      disabled={moderateDiscussion.isPending}
+                      onClick={() =>
+                        moderateDiscussion.mutate({ id: discussion.id, action: "restore" })
+                      }
+                    >
+                      {moderateDiscussion.isPending ? "Saving…" : "Restore post"}
+                    </Button>
+                  ) : (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          className="mt-4"
+                          disabled={moderateDiscussion.isPending}
+                        >
+                          Remove post
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Remove “{discussion.title}”?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            The post and its comments will be hidden from the Reading Room. This can
+                            be restored later.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <label className="grid gap-2 text-sm font-medium">
+                          Moderation reason{" "}
+                          <span className="font-normal text-muted-foreground">
+                            (optional, never public)
+                          </span>
+                          <Textarea
+                            value={moderationReason}
+                            onChange={(event) => setModerationReason(event.target.value)}
+                            maxLength={500}
+                            placeholder="Optional internal note"
+                          />
+                        </label>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Keep post</AlertDialogCancel>
+                          <AlertDialogAction
+                            disabled={moderateDiscussion.isPending}
+                            onClick={() =>
+                              moderateDiscussion.mutate({ id: discussion.id, action: "remove" })
+                            }
+                          >
+                            {moderateDiscussion.isPending ? "Removing…" : "Remove post"}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </div>
+              ))}
+              {!data.discussions.length ? (
+                <p className="rounded-2xl bg-accent/40 p-4 text-sm text-muted-foreground">
+                  No Reading Room posts yet.
+                </p>
+              ) : null}
+            </div>
           </CardContent>
         </Card>
-      </div>
+      ) : null}
+      {activeSection === "suggestions" || activeSection === "polls" ? (
+        <div className="space-y-6">
+          {activeSection === "suggestions" ? (
+            <Card className="rounded-4xl border-border/60 bg-card/80">
+              <CardContent className="p-7">
+                <p className="eyebrow">Suggestion box</p>
+                <h2 className="mt-2 font-display text-2xl">Member ideas</h2>
+                <div className="mt-5 space-y-3">
+                  {data.suggestions.slice(0, 12).map((suggestion) => (
+                    <div key={suggestion.id} className="rounded-2xl bg-accent/40 p-4">
+                      <p className="font-medium">{suggestion.title}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {suggestion.memberName} · {suggestion.status.toLowerCase()}
+                      </p>
+                      <div className="mt-3 flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() =>
+                            setPoll((old) => ({
+                              ...old,
+                              options: [old.options.trim(), suggestion.title]
+                                .filter(Boolean)
+                                .join("\n"),
+                            }))
+                          }
+                        >
+                          Add to poll
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            suggestionStatus.mutate({ id: suggestion.id, status: "ACCEPTED" })
+                          }
+                        >
+                          Accept
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() =>
+                            suggestionStatus.mutate({ id: suggestion.id, status: "DECLINED" })
+                          }
+                        >
+                          Decline
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
+          {activeSection === "polls" ? (
+            <Card className="rounded-4xl border-border/60 bg-card/80">
+              <CardContent className="p-7">
+                <p className="eyebrow">Book voting</p>
+                <h2 className="mt-2 font-display text-2xl">Open a community poll</h2>
+                <form
+                  className="mt-5 space-y-3"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    const options = poll.options.split("\n").filter((value) => value.trim());
+                    if (poll.title.trim() && options.length >= 2) createPoll.mutate();
+                    else toast.error("Add a title and at least two options.");
+                  }}
+                >
+                  <Input
+                    value={poll.title}
+                    onChange={(event) => setPoll((old) => ({ ...old, title: event.target.value }))}
+                    placeholder="Poll title"
+                  />
+                  <Textarea
+                    value={poll.options}
+                    onChange={(event) =>
+                      setPoll((old) => ({ ...old, options: event.target.value }))
+                    }
+                    placeholder={"One candidate book per line\nBook two\nBook three"}
+                  />
+                  <Input
+                    type="datetime-local"
+                    value={poll.endsAt}
+                    onChange={(event) => setPoll((old) => ({ ...old, endsAt: event.target.value }))}
+                  />
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={poll.hideResults}
+                      onChange={(event) =>
+                        setPoll((old) => ({ ...old, hideResults: event.target.checked }))
+                      }
+                    />{" "}
+                    Hide results until the poll closes
+                  </label>
+                  <Button type="submit" variant="hero" disabled={createPoll.isPending}>
+                    Open vote
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
+          ) : null}
+        </div>
+      ) : null}
     </div>
+  );
+}
+
+function AdminNavigation({
+  activeSection,
+  onSelect,
+}: {
+  activeSection: AdminSectionId;
+  onSelect: (section: AdminSectionId) => void;
+}) {
+  return (
+    <nav aria-label="Admin sections" className="flex h-full flex-col">
+      <div className="mb-8 px-3">
+        <p className="eyebrow">Wine & Chapters</p>
+        <p className="mt-2 font-display text-2xl tracking-tight">Admin room</p>
+      </div>
+      <div className="space-y-6">
+        {adminNavigation.map((group) => (
+          <div key={group.label}>
+            <p className="px-3 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+              {group.label}
+            </p>
+            <div className="mt-2 space-y-1">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const selected = item.id === activeSection;
+                return (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => onSelect(item.id)}
+                    aria-current={selected ? "page" : undefined}
+                    className={`flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 py-2 text-left text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-card ${
+                      selected
+                        ? "bg-primary text-primary-foreground shadow-soft"
+                        : "text-foreground hover:bg-accent hover:text-accent-foreground"
+                    }`}
+                  >
+                    <Icon className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    <span>{item.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        ))}
+      </div>
+    </nav>
   );
 }
 

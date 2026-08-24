@@ -23,7 +23,7 @@ export async function paystackRequest(path: string, options: RequestInit = {}) {
   const data = (await response.json().catch(() => ({}))) as Record<string, unknown>;
   if (!response.ok || data.status === false) {
     console.error("Paystack request failed", response.status, data.message);
-    throw new HttpError("Paystack could not start the payment. Please try again.", 502);
+    throw new HttpError("Secure checkout could not start. Please try again.", 502);
   }
   return data;
 }
