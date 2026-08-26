@@ -23,16 +23,16 @@ import { useAuth } from "@/lib/auth";
 export const Route = createFileRoute("/register")({
   head: () => ({
     meta: [
-      { title: "Apply for Membership — Wine & Chapters" },
+      { title: "Join Wine & Chapters" },
       {
         name: "description",
         content:
-          "Apply to join Wine & Chapters. Tell us your name, region and Instagram handle — the committee reviews applications within 48 hours.",
+          "Create your Wine & Chapters member account and verify your email to enter the clubhouse.",
       },
-      { property: "og:title", content: "Apply for Membership — Wine & Chapters" },
+      { property: "og:title", content: "Join Wine & Chapters" },
       {
         property: "og:description",
-        content: "Applications reviewed within 48 hours. Chapters stay small on purpose.",
+        content: "Create your member account, verify your email, and join the conversation.",
       },
     ],
   }),
@@ -88,7 +88,7 @@ function RegisterPage() {
         ...(values.instagram ? { instagram: values.instagram } : {}),
       });
       setSubmitted(res.message);
-      toast.success("Application received.");
+      toast.success("Account created.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Unable to submit right now.");
     }
@@ -97,7 +97,7 @@ function RegisterPage() {
   if (submitted) {
     return (
       <AuthLayout
-        eyebrow="Application received"
+        eyebrow="Account created"
         title="Check your inbox."
         description={submitted}
         footer={
@@ -112,8 +112,8 @@ function RegisterPage() {
             aria-hidden="true"
           />
           <p>
-            Verify your email, then the committee reviews your application within 48 hours. You'll
-            get your WhatsApp community invite once approved.
+            Verify your email, then sign in to enter the member area. Email confirmation remains
+            required for account security.
           </p>
         </div>
       </AuthLayout>
@@ -122,9 +122,9 @@ function RegisterPage() {
 
   return (
     <AuthLayout
-      eyebrow="Membership application"
+      eyebrow="Member registration"
       title="Pull up a chair."
-      description="A few details so we can welcome you properly. Intake is capped each month."
+      description="A few details so we can welcome you properly. Verify your email and you’re ready for the member area."
       footer={
         <>
           Already a member?{" "}

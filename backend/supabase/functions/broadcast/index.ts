@@ -30,8 +30,9 @@ Deno.serve(async (request) => {
       const { data, error } = await client
         .from("users")
         .select("email")
-        .eq("approved", true)
-        .eq("email_verified", true);
+        .eq("email_verified", true)
+        .eq("blocked", false)
+        .is("deleted_at", null);
       if (error) throw error;
       for (const row of data ?? []) recipients.add(row.email);
     }

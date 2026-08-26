@@ -657,12 +657,47 @@ function Testimonials() {
   const shouldReduceMotion = useReducedMotion();
   const [active, setActive] = useState(0);
   const [direction, setDirection] = useState(1);
-  const testimonial = testimonials[active] ?? testimonials[0];
+  const [isPaused, setIsPaused] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+  const testimonial = (testimonials[active] ?? testimonials[0]) as {
+    readonly name: string;
+    readonly quote: string;
+    readonly image?: string;
+  };
 
   function move(nextDirection: number) {
     setDirection(nextDirection);
     setActive((index) => (index + nextDirection + testimonials.length) % testimonials.length);
   }
+
+  function getAutoplayDuration(quote: string) {
+    const words = quote.replaceAll("\n", " ").trim().split(/\s+/).length;
+    // slower dwell so Nadia remains readable, swift slide handled by transition below
+    return Math.max(8500, Math.min(18000, Math.round(words * 360 + 5500)));
+  }
+
+  const isLong = testimonial.quote.length > 300 || testimonial.quote.split(/\s+/).length > 42;
+  const TRUNCATE_WORDS = 34;
+
+  function truncateWords(text: string, max: number) {
+    const words = text.replaceAll("\n\n", " ").replaceAll("\n", " ").trim().split(/\s+/);
+    if (words.length <= max) return text;
+    return words.slice(0, max).join(" ") + "…";
+  }
+
+  const displayQuote =
+    !isLong || expanded ? testimonial.quote : truncateWords(testimonial.quote, TRUNCATE_WORDS);
+
+  useEffect(() => {
+    setExpanded(false);
+  }, [active]);
+
+  useEffect(() => {
+    if (isPaused || expanded) return;
+    const duration = getAutoplayDuration(expanded ? testimonial.quote : displayQuote);
+    const id = window.setTimeout(() => move(1), duration);
+    return () => window.clearTimeout(id);
+  }, [active, isPaused, expanded, testimonial.quote, displayQuote]);
 
   return (
     <div className="home-chapter home-chapter--quiet home-testimonials">
@@ -681,22 +716,37 @@ function Testimonials() {
           role="region"
           aria-roledescription="carousel"
           aria-label="Wine and Chapters member testimonials"
+          onMouseEnter={() => setIsPaused(true)}
+          onMouseLeave={() => setIsPaused(false)}
+          onFocusCapture={() => setIsPaused(true)}
+          onBlurCapture={() => setIsPaused(false)}
         >
-          <div className="testimonial-carousel__viewport">
+          <div className={`testimonial-carousel__viewport${expanded ? " is-expanded" : ""}`}>
+            <img
+              src="/img/overlay.png"
+              alt=""
+              aria-hidden="true"
+              className="testimonial-carousel__overlay"
+              loading="lazy"
+              decoding="async"
+            />
+
             <AnimatePresence initial={false} custom={direction} mode="popLayout">
               <motion.article
                 key={testimonial.name}
                 className="testimonial-carousel__slide"
                 custom={direction}
-                initial={shouldReduceMotion ? { opacity: 1 } : { x: `${direction * 100}%` }}
+                initial={
+                  shouldReduceMotion ? { opacity: 0 } : { x: `${direction * 100}%`, opacity: 0 }
+                }
                 animate={{ x: 0, opacity: 1 }}
                 exit={
-                  shouldReduceMotion ? { opacity: 1 } : { x: `${direction * -100}%`, opacity: 0.7 }
+                  shouldReduceMotion ? { opacity: 0 } : { x: `${direction * -100}%`, opacity: 0 }
                 }
                 transition={
                   shouldReduceMotion
-                    ? { duration: 0 }
-                    : { duration: 0.55, ease: [0.22, 1, 0.36, 1] }
+                    ? { duration: 0.35, ease: "easeOut" }
+                    : { duration: 0.95, ease: [0.16, 0.84, 0.44, 1] }
                 }
                 drag={shouldReduceMotion ? false : "x"}
                 dragConstraints={{ left: 0, right: 0 }}
@@ -708,26 +758,101 @@ function Testimonials() {
                 aria-roledescription="slide"
                 aria-label={`${active + 1} of ${testimonials.length}`}
               >
-                <div className="testimonial-carousel__portrait">
-                  {testimonial.image ? (
-                    <img
-                      src={testimonial.image}
-                      alt={`${testimonial.name}, Wine and Chapters member`}
-                      loading="lazy"
-                    />
-                  ) : (
-                    <span aria-label={`${testimonial.name} initials`}>
-                      {testimonial.name
-                        .split(" ")
-                        .map((part) => part[0])
-                        .join("")}
-                    </span>
-                  )}
+                <div className="testimonial-carousel__identity">
+                  <div className="testimonial-carousel__portrait">
+                    {testimonial.image ? (
+                      <img
+                        src={testimonial.image}
+                        alt={`${testimonial.name}, Wine and Chapters member`}
+                        loading="lazy"
+                        style={{ objectPosition: "center 18%" }}
+                      />
+                    ) : (
+                      <span aria-label={`${testimonial.name} initials`}>
+                        {testimonial.name
+                          .split(" ")
+                          .map((part) => part[0])
+                          .join("")}
+                      </span>
+                    )}
+                  </div>
+                  <p className="testimonial-carousel__name">{testimonial.name}</p>
                 </div>
+                <div className="testimonial-carousel__divider" aria-hidden="true" />
                 <div className="testimonial-carousel__quote">
                   <Quote aria-hidden="true" />
-                  <blockquote>{testimonial.quote}</blockquote>
-                  <p>{testimonial.name}</p>
+                  <blockquote
+                    id={`testimonial-quote-${active}`}
+                    className={expanded ? "" : "is-clamped"}
+                  >
+                    {(() => {
+                      const paragraphs =
+                        !isLong || expanded ? displayQuote.split("\n\n") : [displayQuote];
+                      const allWordsCount = paragraphs.join(" ").trim().split(/\s+/).length;
+                      if (shouldReduceMotion) {
+                        return paragraphs.map((para, pIdx) => (
+                          <span key={pIdx} className={pIdx === 0 ? "block" : "mt-3 block"}>
+                            {para}
+                          </span>
+                        ));
+                      }
+                      let wordIndex = 0;
+                      return paragraphs.map((para, pIdx) => {
+                        const words = para.trim().split(/(\s+)/);
+                        return (
+                          <span
+                            key={`${testimonial.name}-${pIdx}-${expanded ? "exp" : "col"}`}
+                            className={pIdx === 0 ? "block" : "mt-3 block"}
+                          >
+                            <motion.span
+                              initial="hidden"
+                              animate="visible"
+                              variants={{
+                                hidden: {},
+                                visible: { transition: { staggerChildren: 0.018 } },
+                              }}
+                            >
+                              {words.map((w, wIdx) => {
+                                if (!w.trim()) return <span key={wIdx}>{w}</span>;
+                                const current = wordIndex++;
+                                return (
+                                  <motion.span
+                                    key={`${current}-${w}`}
+                                    variants={{
+                                      hidden: { opacity: 0, y: 4 },
+                                      visible: {
+                                        opacity: 1,
+                                        y: 0,
+                                        transition: {
+                                          duration: 0.24,
+                                          ease: [0.22, 1, 0.36, 1] as const,
+                                          delay: current * 0.015,
+                                        },
+                                      },
+                                    }}
+                                    style={{ display: "inline-block", whiteSpace: "pre" }}
+                                  >
+                                    {w}
+                                  </motion.span>
+                                );
+                              })}
+                            </motion.span>
+                          </span>
+                        );
+                      });
+                    })()}
+                  </blockquote>
+                  {isLong && (
+                    <button
+                      type="button"
+                      className="testimonial-read-more"
+                      onClick={() => setExpanded((v) => !v)}
+                      aria-expanded={expanded}
+                      aria-controls={`testimonial-quote-${active}`}
+                    >
+                      {expanded ? "Show less" : "Read more"}
+                    </button>
+                  )}
                 </div>
               </motion.article>
             </AnimatePresence>
@@ -781,7 +906,7 @@ const missBooksCapabilities = [
   { label: "Explore club reads and events", icon: CalendarDays },
 ] as const;
 
-function MeetMissBooks() {
+function MeetBookieSmalls() {
   return (
     <div className="home-chapter home-chapter--watercolor home-miss-books">
       <Section id="meet-miss-books" aria-labelledby="meet-miss-books-title">
@@ -790,7 +915,7 @@ function MeetMissBooks() {
             <p className="eyebrow eyebrow-accent">Your reading-room companion</p>
             <Reveal>
               <h2 id="meet-miss-books-title" className="mt-4 text-3xl tracking-tight sm:text-4xl">
-                Meet Miss Books
+                Meet Bookie Smalls
               </h2>
             </Reveal>
             <p className="mt-5 max-w-2xl text-base leading-relaxed text-muted-foreground">
@@ -798,7 +923,7 @@ function MeetMissBooks() {
               compare prices, find trusted reviews, explore authors, check club events, and navigate
               Wine &amp; Chapters—all through a simple conversation.
             </p>
-            <ul className="home-miss-books__capabilities" aria-label="Miss Books capabilities">
+            <ul className="home-miss-books__capabilities" aria-label="Bookie Smalls capabilities">
               {missBooksCapabilities.map(({ label, icon: Icon }) => (
                 <li key={label}>
                   <span aria-hidden="true">
@@ -819,7 +944,7 @@ function MeetMissBooks() {
               className="mt-7"
               onClick={openBooksWidget}
             >
-              Ask Miss Books
+              Ask Bookie Smalls
               <ArrowRight className="btn-arrow" aria-hidden="true" />
             </Button>
           </div>
@@ -828,7 +953,7 @@ function MeetMissBooks() {
               <source srcSet="/img/missbooks.webp" type="image/webp" />
               <img
                 src="/img/missbooks.png"
-                alt="Miss Books, the Wine and Chapters AI companion, waving beside books and a glass of wine"
+                alt="Bookie Smalls, the Wine and Chapters AI companion, waving beside books and a glass of wine"
                 width={1536}
                 height={1024}
                 loading="lazy"
@@ -851,7 +976,7 @@ function HomePage() {
       </div>
       <DiscoveryStrip />
       <Testimonials />
-      <MeetMissBooks />
+      <MeetBookieSmalls />
       <div className="home-chapter home-chapter--quiet home-chapter--current">
         <CurrentBook />
       </div>

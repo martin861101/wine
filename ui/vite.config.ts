@@ -17,6 +17,14 @@ export default defineConfig(() => {
         "0.0.0.0",
       ],
     },
+    build: {
+      rollupOptions: {
+        input: {
+          main: "index.html",
+          fallback: "fallback.html",
+        },
+      },
+    },
     plugins: [
       tanstackRouter({ target: "react", autoCodeSplitting: true }),
       tsConfigPaths(),

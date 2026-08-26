@@ -151,7 +151,7 @@ export function DemoChatWidget() {
         {
           id: `local-error:${crypto.randomUUID()}`,
           role: "assistant",
-          text: "Please sign in with an approved membership to use the live reading-room assistant.",
+          text: "Please sign in with a verified membership to use the live reading-room assistant.",
           status: "complete",
           requestId: null,
         },
@@ -273,11 +273,11 @@ export function DemoChatWidget() {
               size="icon"
               className="absolute right-2 top-2"
               onClick={declineProactive}
-              aria-label="Dismiss Miss Books suggestion"
+              aria-label="Dismiss Bookie Smalls suggestion"
             >
               <X aria-hidden="true" />
             </Button>
-            <p className="eyebrow">Miss Books has an idea</p>
+            <p className="eyebrow">Bookie Smalls has an idea</p>
             <p className="mt-3 font-display text-lg leading-snug">{proactivePrompt}</p>
             <div className="mt-4 flex gap-2">
               <Button variant="hero" size="sm" onClick={acceptProactive}>
@@ -293,7 +293,7 @@ export function DemoChatWidget() {
       {open ? (
         <Card
           role="dialog"
-          aria-label="Chat with Miss Books"
+          aria-label="Chat with Bookie Smalls"
           className="mb-3 w-[calc(100vw-2.5rem)] max-w-md overflow-hidden rounded-3xl border-primary/20 bg-card/90 shadow-lift backdrop-blur-3xl backdrop-saturate-150"
           style={{
             backgroundColor: "color-mix(in oklab, var(--card) 90%, transparent)",
@@ -317,7 +317,7 @@ export function DemoChatWidget() {
                 size="icon"
                 className="text-primary-foreground hover:bg-primary-foreground/15 hover:text-primary-foreground"
                 onClick={() => setOpen(false)}
-                aria-label="Close Miss Books chat"
+                aria-label="Close Bookie Smalls chat"
               >
                 <X aria-hidden="true" />
               </Button>
@@ -329,8 +329,8 @@ export function DemoChatWidget() {
               </div>
               <p className="mt-1.5">
                 {isAuthenticated
-                  ? "Ask about the club, find a book, or let Miss Books show you around."
-                  : "Sign in with an approved membership to start a live conversation."}
+                  ? "Ask about the club, find a book, or let Bookie Smalls show you around."
+                  : "Sign in with a verified membership to start a live conversation."}
               </p>
             </div>
           </div>
@@ -383,7 +383,7 @@ export function DemoChatWidget() {
 
             <form onSubmit={sendMessage} className="mt-3 flex items-end gap-2">
               <label htmlFor="demo-chat-message" className="sr-only">
-                Message Miss Books
+                Message Bookie Smalls
               </label>
               <Textarea
                 id="demo-chat-message"
@@ -424,7 +424,7 @@ export function DemoChatWidget() {
           onClick={() => setOpen((current) => !current)}
           aria-expanded={open}
           aria-controls="demo-chat-message"
-          aria-label="Open Miss Books chat"
+          aria-label="Open Bookie Smalls chat"
           className="ai-widget__launcher-button float-slow block h-24 w-24 overflow-hidden rounded-full shadow-lift transition-transform hover:scale-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         >
           <img src="/img/ai_widget.png" alt="" className="h-full w-full object-cover" />

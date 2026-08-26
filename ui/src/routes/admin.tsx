@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   BookOpen,
+  Ban,
   CalendarPlus,
   Check,
   CreditCard,
@@ -9,9 +10,12 @@ import {
   LayoutDashboard,
   Lightbulb,
   Mail,
+  MailCheck,
   Menu,
   MessageSquare,
+  MoreHorizontal,
   Pencil,
+  KeyRound,
   Send,
   ShieldCheck,
   Star,
@@ -43,8 +47,15 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { adminApi, type AdminEvent, type PaymentMethodSettings } from "@/lib/api";
+import { adminApi, type AdminEvent, type AdminMember, type PaymentMethodSettings } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -119,6 +130,7 @@ function AdminPage() {
 }
 
 function AdminDashboard() {
+  const { user } = useAuth();
   const queryClient = useQueryClient();
   const overview = useQuery({
     queryKey: ["admin-overview"],
@@ -197,11 +209,23 @@ function AdminDashboard() {
     void queryClient.invalidateQueries({ queryKey: ["club-events"] });
   };
   const memberMutation = useMutation({
-    mutationFn: ({ id, approved }: { id: string; approved: boolean }) =>
-      adminApi.updateMember(id, { approved }),
-    onSuccess: () => {
+    mutationFn: ({
+      id,
+      action,
+    }: {
+      id: string;
+      action: "password-reset" | "resend-confirmation" | "block" | "unblock" | "remove";
+    }) => adminApi.memberAction(id, action, action === "remove" ? "REMOVE" : undefined),
+    onSuccess: (_result, variables) => {
       invalidate();
-      toast.success("Member status updated.");
+      const messages = {
+        "password-reset": "Password reset email sent.",
+        "resend-confirmation": "Confirmation email resent.",
+        block: "Member access blocked.",
+        unblock: "Member access restored.",
+        remove: "Member removed and their retained content anonymised.",
+      };
+      toast.success(messages[variables.action]);
     },
     onError: (error) =>
       toast.error(error instanceof Error ? error.message : "Member update failed."),
@@ -215,7 +239,7 @@ function AdminDashboard() {
       setPaymentForm(settings);
       void queryClient.invalidateQueries({ queryKey: ["admin-payment-settings"] });
       void queryClient.invalidateQueries({ queryKey: ["payment-method-settings"] });
-      toast.success("Payment settings saved.");
+      toast.success("Operations settings saved.");
     },
     onError: (error) =>
       toast.error(error instanceof Error ? error.message : "Payment settings could not be saved."),
@@ -445,7 +469,7 @@ function AdminDashboard() {
               </div>
               <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
                 <Stat label="Members" value={data.stats.members} />
-                <Stat label="Approved" value={data.stats.approvedMembers} />
+                <Stat label="Active" value={data.stats.activeMembers} />
                 <Stat label="Subscribers" value={data.stats.subscribers} />
                 <Stat label="Books" value={data.stats.books} />
                 <Stat label="Events" value={data.stats.events} />
@@ -484,6 +508,27 @@ function AdminDashboard() {
                         paymentSettingsMutation.mutate();
                       }}
                     >
+                      <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/60 p-4">
+                        <div>
+                          <label htmlFor="fallback-mode" className="text-sm font-medium">
+                            Fallback page enabled
+                          </label>
+                          <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
+                            Send public visitors to /fallback.html. Admin and sign-in routes remain
+                            available so this can be switched off safely.
+                          </p>
+                        </div>
+                        <Switch
+                          id="fallback-mode"
+                          checked={paymentForm.fallbackEnabled}
+                          onCheckedChange={(checked) =>
+                            setPaymentForm((current) =>
+                              current ? { ...current, fallbackEnabled: checked } : current,
+                            )
+                          }
+                          aria-label="Fallback page enabled"
+                        />
+                      </div>
                       <div className="flex items-center justify-between gap-4 rounded-2xl border border-border/60 p-4">
                         <div>
                           <label htmlFor="online-payments" className="text-sm font-medium">
@@ -536,7 +581,7 @@ function AdminDashboard() {
                         variant="hero"
                         disabled={paymentSettingsMutation.isPending}
                       >
-                        {paymentSettingsMutation.isPending ? "Saving…" : "Save payment settings"}
+                        {paymentSettingsMutation.isPending ? "Saving…" : "Save operations settings"}
                       </Button>
                     </form>
                   )}
@@ -566,7 +611,7 @@ function AdminDashboard() {
                       className="h-10 w-full rounded-xl border border-input bg-card px-3 text-sm"
                       aria-label="Email audience"
                     >
-                      <option value="MEMBERS">Approved members</option>
+                      <option value="MEMBERS">Verified members</option>
                       <option value="SUBSCRIBERS">Newsletter subscribers</option>
                       <option value="ALL">Members and subscribers</option>
                     </select>
@@ -1002,7 +1047,8 @@ function AdminDashboard() {
           {activeSection === "members" ? (
             <MembersPanel
               members={data.members}
-              onToggle={(id, approved) => memberMutation.mutate({ id, approved })}
+              currentMemberId={user?.id ?? null}
+              onAction={(id, action) => memberMutation.mutate({ id, action })}
               pending={memberMutation.isPending}
             />
           ) : null}
@@ -1557,90 +1603,220 @@ function Stat({ label, value }: { label: string; value: number }) {
 
 function MembersPanel({
   members,
-  onToggle,
+  currentMemberId,
+  onAction,
   pending,
 }: {
-  members: Array<{
-    id: string;
-    email: string;
-    firstName: string;
-    lastName: string;
-    role: string;
-    emailVerified: boolean;
-    approved: boolean;
-  }>;
-  onToggle: (id: string, approved: boolean) => void;
+  members: AdminMember[];
+  currentMemberId: string | null;
+  onAction: (id: string, action: MemberAction) => void;
   pending: boolean;
 }) {
+  const [confirmation, setConfirmation] = useState<{
+    member: AdminMember;
+    action: "block" | "remove";
+  } | null>(null);
+  const isSelf = (member: AdminMember) => member.id === currentMemberId;
+  const requestAction = (member: AdminMember, action: MemberAction) => {
+    if (action === "block" || action === "remove") return setConfirmation({ member, action });
+    onAction(member.id, action);
+  };
   return (
-    <Card className="rounded-4xl border-border/60 bg-card/80">
-      <CardContent className="p-7 sm:p-8">
-        <div className="flex items-center gap-3">
-          <Users className="h-5 w-5 text-primary" aria-hidden="true" />
-          <div>
-            <p className="eyebrow">People</p>
-            <h2 className="mt-2 font-display text-2xl">Members</h2>
+    <>
+      <Card className="rounded-4xl border-border/60 bg-card/80">
+        <CardContent className="p-7 sm:p-8">
+          <div className="flex items-center gap-3">
+            <Users className="h-5 w-5 text-primary" aria-hidden="true" />
+            <div>
+              <p className="eyebrow">People</p>
+              <h2 className="mt-2 font-display text-2xl">Members</h2>
+            </div>
           </div>
-        </div>
-        <div className="mt-6 overflow-x-auto">
-          <table className="w-full min-w-[640px] text-left text-sm">
-            <thead className="border-b border-border/60 text-xs text-muted-foreground">
-              <tr>
-                <th className="pb-3 font-medium">Member</th>
-                <th className="pb-3 font-medium">Status</th>
-                <th className="pb-3 font-medium">Role</th>
-                <th className="pb-3 text-right font-medium">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {members.map((member) => (
-                <tr key={member.id} className="border-b border-border/40 last:border-0">
-                  <td className="py-4">
+          <div className="mt-6 hidden md:block">
+            <table className="w-full text-left text-sm">
+              <thead className="border-b border-border/60 text-xs text-muted-foreground">
+                <tr>
+                  <th className="pb-3 font-medium">Member</th>
+                  <th className="pb-3 font-medium">Status</th>
+                  <th className="pb-3 font-medium">Role</th>
+                  <th className="pb-3 text-right font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {members.map((member) => (
+                  <tr key={member.id} className="border-b border-border/40 last:border-0">
+                    <td className="py-4">
+                      <p className="font-medium">
+                        {member.firstName} {member.lastName}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{member.email}</p>
+                    </td>
+                    <td className="py-4">
+                      <MemberStatus member={member} />
+                    </td>
+                    <td className="py-4 text-muted-foreground">{member.role}</td>
+                    <td className="py-4 text-right">
+                      <MemberActions
+                        member={member}
+                        isSelf={isSelf(member)}
+                        pending={pending}
+                        onAction={requestAction}
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-6 grid gap-3 md:hidden">
+            {members.map((member) => (
+              <article
+                key={member.id}
+                className="rounded-3xl border border-border/60 bg-background/35 p-4"
+              >
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
                     <p className="font-medium">
                       {member.firstName} {member.lastName}
                     </p>
-                    <p className="text-xs text-muted-foreground">{member.email}</p>
-                  </td>
-                  <td className="py-4">
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant={member.approved ? "secondary" : "outline"}>
-                        {member.approved ? "Approved" : "Pending"}
-                      </Badge>
-                      {member.emailVerified ? (
-                        <Badge variant="secondary">Verified</Badge>
-                      ) : (
-                        <Badge variant="outline">Unverified</Badge>
-                      )}
-                    </div>
-                  </td>
-                  <td className="py-4 text-muted-foreground">{member.role}</td>
-                  <td className="py-4 text-right">
-                    <Button
-                      size="sm"
-                      variant={member.approved ? "outline" : "hero"}
-                      disabled={pending}
-                      onClick={() => onToggle(member.id, !member.approved)}
-                    >
-                      {member.approved ? (
-                        <>
-                          <X className="mr-1 h-3.5 w-3.5" />
-                          Revoke
-                        </>
-                      ) : (
-                        <>
-                          <Check className="mr-1 h-3.5 w-3.5" />
-                          Approve
-                        </>
-                      )}
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </CardContent>
-    </Card>
+                    <p className="mt-1 break-all text-xs text-muted-foreground">{member.email}</p>
+                  </div>
+                  <MemberActions
+                    member={member}
+                    isSelf={isSelf(member)}
+                    pending={pending}
+                    onAction={requestAction}
+                  />
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <MemberStatus member={member} />
+                  <Badge variant="outline">{member.role}</Badge>
+                </div>
+              </article>
+            ))}
+          </div>
+        </CardContent>
+      </Card>
+      <AlertDialog
+        open={Boolean(confirmation)}
+        onOpenChange={(open) => !open && setConfirmation(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmation?.action === "remove" ? "Remove member" : "Block member"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmation?.action === "remove" ? (
+                <>
+                  Remove {confirmation.member.firstName} {confirmation.member.lastName} (
+                  {confirmation.member.email})? Their account access will be removed and retained
+                  community content anonymised.
+                </>
+              ) : (
+                <>
+                  Block {confirmation?.member.firstName} {confirmation?.member.lastName}? They will
+                  lose access until an administrator unblocks them.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={pending}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              disabled={pending || !confirmation}
+              onClick={() => {
+                if (confirmation) onAction(confirmation.member.id, confirmation.action);
+                setConfirmation(null);
+              }}
+            >
+              {pending
+                ? "Working…"
+                : confirmation?.action === "remove"
+                  ? "Remove member"
+                  : "Block member"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
+type MemberAction = "password-reset" | "resend-confirmation" | "block" | "unblock" | "remove";
+
+function MemberStatus({ member }: { member: AdminMember }) {
+  return (
+    <div className="flex flex-wrap gap-2">
+      {member.blocked ? <Badge variant="destructive">Blocked</Badge> : null}
+      <Badge variant={member.emailVerified ? "secondary" : "outline"}>
+        {member.emailVerified ? "Verified" : "Unverified"}
+      </Badge>
+    </div>
+  );
+}
+
+function MemberActions({
+  member,
+  isSelf,
+  pending,
+  onAction,
+}: {
+  member: AdminMember;
+  isSelf: boolean;
+  pending: boolean;
+  onAction: (member: AdminMember, action: MemberAction) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          size="icon"
+          variant="outline"
+          disabled={pending}
+          aria-label={`Actions for ${member.firstName} ${member.lastName}`}
+        >
+          <MoreHorizontal aria-hidden="true" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-56">
+        <DropdownMenuItem disabled={pending} onSelect={() => onAction(member, "password-reset")}>
+          <KeyRound aria-hidden="true" />
+          Send password reset
+        </DropdownMenuItem>
+        {!member.emailVerified ? (
+          <DropdownMenuItem
+            disabled={pending}
+            onSelect={() => onAction(member, "resend-confirmation")}
+          >
+            <MailCheck aria-hidden="true" />
+            Resend confirmation email
+          </DropdownMenuItem>
+        ) : null}
+        <DropdownMenuSeparator />
+        <DropdownMenuItem
+          disabled={pending || isSelf}
+          onSelect={() => onAction(member, member.blocked ? "unblock" : "block")}
+        >
+          {member.blocked ? <Check aria-hidden="true" /> : <Ban aria-hidden="true" />}
+          {member.blocked ? "Unblock user" : "Block user"}
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          disabled={pending || isSelf}
+          onSelect={() => onAction(member, "remove")}
+        >
+          <Trash2 aria-hidden="true" />
+          Remove user
+        </DropdownMenuItem>
+        {isSelf ? (
+          <p className="px-2 pb-1 pt-2 text-xs text-muted-foreground">
+            You cannot block or remove your own account.
+          </p>
+        ) : null}
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

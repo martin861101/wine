@@ -69,13 +69,13 @@ npx supabase db lint --linked --schema public --level warning --fail-on error
 
 Migration `20260817145733_supabase_native_backend.sql` creates the complete schema, links `auth.users` to application members, enables RLS, creates browser-safe RPC functions, and provisions Storage policies. Migration `20260817152100_backfill_auth_users.sql` safely links Auth accounts that existed before the trigger was installed.
 
-New Auth accounts create or link an application `users` row by email. Existing legacy member IDs remain stable through `users.auth_user_id`, preserving foreign-key relationships. New members cannot access member data until their email is verified and an administrator sets `approved=true`.
+New Auth accounts create or link an application `users` row by email. Existing legacy member IDs remain stable through `users.auth_user_id`, preserving foreign-key relationships. New registrations receive `MEMBER` access automatically after email verification. The retained `approved` field is compatibility-only; access is denied only when email is unverified or the account is blocked/removed.
 
-The first production administrator, `hello@wineandchapters.co.za`, has been created in Supabase Auth and explicitly promoted. Subsequent member approvals can be performed in the application dashboard. To promote a replacement account deliberately, use the Supabase SQL editor:
+The first production administrator, `hello@wineandchapters.co.za`, has been created in Supabase Auth and explicitly promoted. To promote a replacement account deliberately, use the protected dashboard role operation or the Supabase SQL editor:
 
 ```sql
 UPDATE public.users
-SET role = 'ADMIN', approved = true
+SET role = 'ADMIN'
 WHERE email = 'the-confirmed-admin@example.com';
 ```
 
@@ -86,6 +86,8 @@ The principal RPCs used by the UI are:
 - `get_discussions()`
 - `get_admin_overview()`
 - `admin_update_member(...)`
+- `submit_book_review(...)`
+- `get_published_reviews()`
 - `admin_set_current_read(...)`
 - `subscribe_newsletter(...)`
 
@@ -97,6 +99,7 @@ Deploy from `backend/`:
 npx supabase functions deploy contact --no-verify-jwt
 npx supabase functions deploy broadcast
 npx supabase functions deploy ai-chat
+npx supabase functions deploy admin-members
 npx supabase functions deploy paystack-checkout
 npx supabase functions deploy paystack-webhook
 npx supabase secrets set CORS_ORIGIN=https://wineandchapters.co.za \
@@ -105,9 +108,13 @@ npx supabase secrets set CORS_ORIGIN=https://wineandchapters.co.za \
 
 `contact` accepts anonymous website submissions only from the configured origin, persists every valid message in `contact_messages`, and delivers it through the configured xneelo SMTP mailbox.
 
-`broadcast` requires a verified, approved administrator JWT and delivers through the same SMTP mailbox. The Edge Function secrets `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, and `EMAIL_FROM` must be configured.
+`broadcast` requires a verified, unblocked administrator JWT and delivers through the same SMTP mailbox. The Edge Function secrets `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASSWORD`, and `EMAIL_FROM` must be configured.
 
-`ai-chat` requires a verified, approved member session, reads club context, and lets Gemini combine Open Library, Tavily web search, the safe webpage reader, and existing UI actions. It uses the server-side `GEMINI_API_KEY`, `GEMINI_MODEL`, and `TAVILY_API_KEY` secrets. The UI calls it through the Supabase browser client; no provider secret or standalone Node API URL is used by the browser.
+`admin-members` verifies the caller JWT and trusted database role before sending reset/confirmation email, blocking/unblocking Auth access, or deliberately removing an Auth identity. Removal anonymises the retained application user so community content is preserved. See `docs/REVIEW_MEMBER_ADMIN_BACKEND.md` for the complete contract and error codes.
+
+`ai-chat` requires a verified, unblocked member session, reads club context, and lets Gemini combine Open Library, Tavily web search, the safe webpage reader, and existing UI actions. It uses the server-side `GEMINI_API_KEY`, `GEMINI_MODEL`, and `TAVILY_API_KEY` secrets. The UI calls it through the Supabase browser client; no provider secret or standalone Node API URL is used by the browser.
+
+Gateway JWT verification is intentionally disabled for this function, so its invocation summary may show `auth_user: null`. `requireMember` still validates the bearer token through Supabase Auth and resolves a verified, active application member before any conversation or tool access. Gemini failures receive content-safe structured logs and a browser-safe correlation `errorId`; prompts, credentials, tool arguments, and provider bodies are not logged. See `docs/CHAT_WIDGET.md` for timeout, retry, and error mappings.
 
 ```sh
 cd backend
@@ -149,6 +156,6 @@ npm run build:all
 npm run lint
 ```
 
-After deploying the xneelo UI, test signup confirmation, password recovery, member approval, login, the member hub, contact submission, and an administrator action using non-production test accounts.
+After deploying the xneelo UI, test signup confirmation, automatic member access, password recovery, block/unblock, confirmation resend, self/last-admin protection, deliberate removal, fallback mode, login, the member hub, contact submission, and a standard member receiving `403` from `admin-members`.
 
 The xneelo virtual host must serve a certificate whose SAN includes `wineandchapters.co.za`. A generic `*.jnb3.host-h.net` certificate does not validate for the production domain and will prevent Auth callback links from opening securely.

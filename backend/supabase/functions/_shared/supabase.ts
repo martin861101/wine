@@ -19,15 +19,16 @@ export async function requireAdmin(request: Request) {
   if (error || !data.user) throw new HttpError("Invalid authorization token.", 401);
   const { data: member, error: memberError } = await client
     .from("users")
-    .select("id,role,approved,email_verified")
+    .select("id,role,email_verified,blocked,deleted_at")
     .eq("auth_user_id", data.user.id)
     .single();
   if (
     memberError ||
     !member ||
     member.role !== "ADMIN" ||
-    !member.approved ||
-    !member.email_verified
+    !member.email_verified ||
+    member.blocked ||
+    member.deleted_at
   ) {
     throw new HttpError("Administrator access required.", 403);
   }
@@ -44,11 +45,11 @@ export async function requireMember(request: Request) {
   if (error || !data.user) throw new HttpError("Please sign in to continue.", 401);
   const { data: member, error: memberError } = await client
     .from("users")
-    .select("id,role,approved,email_verified")
+    .select("id,role,email_verified,blocked,deleted_at")
     .eq("auth_user_id", data.user.id)
     .single();
-  if (memberError || !member || !member.approved || !member.email_verified) {
-    throw new HttpError("An approved membership is required to use the assistant.", 403);
+  if (memberError || !member || !member.email_verified || member.blocked || member.deleted_at) {
+    throw new HttpError("A verified, active membership is required to use the assistant.", 403);
   }
   return { client, member };
 }

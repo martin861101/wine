@@ -31,7 +31,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const applicationSession = await toAuthSession(next);
         if (active) {
           setSession(
-            applicationSession.user.approved && applicationSession.user.emailVerified
+            applicationSession.user.emailVerified && !applicationSession.user.blocked
               ? applicationSession
               : null,
           );

@@ -24,7 +24,7 @@ backend/storage/
 .env*.supabase
 **/supabase/.temp/
 .env
-
+export
 # Wrangler / Cloudflare
 .wrangler/
 .dev.vars
@@ -44,3 +44,4 @@ backend/storage/
 .env
 .env.*
 !.env.example
+/export

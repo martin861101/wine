@@ -24,6 +24,13 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -78,6 +85,80 @@ const moods = [
   { value: "Emotional", emoji: "🥹" },
 ] as const;
 
+function reviewText(review: PublishedReview) {
+  return review.thoughts || review.body;
+}
+
+function reviewNeedsExpansion(review: PublishedReview) {
+  return (
+    reviewText(review).length > 360 ||
+    Boolean(
+      review.bookAuthor ||
+      review.overallRating ||
+      review.genre ||
+      review.format ||
+      review.pickedBy ||
+      review.startDate ||
+      review.endDate ||
+      review.spiceLevel ||
+      review.tearLevel ||
+      review.madeMeFeel?.length ||
+      review.favouriteQuotes ||
+      review.recommendation,
+    )
+  );
+}
+
+function formattedDate(value: string | null) {
+  if (!value) return null;
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat("en-ZA", { dateStyle: "medium" }).format(date);
+}
+
+function ReviewPills({ review }: { review: PublishedReview }) {
+  const entries = [
+    review.genre,
+    review.format,
+    review.pickedBy ? `Picked by ${review.pickedBy}` : null,
+    formattedDate(review.startDate) ? `Started ${formattedDate(review.startDate)}` : null,
+    formattedDate(review.endDate) ? `Finished ${formattedDate(review.endDate)}` : null,
+    review.spiceLevel !== null ? `Spice ${review.spiceLevel}/5` : null,
+    review.tearLevel !== null ? `Tears ${review.tearLevel}/5` : null,
+    review.recommendation ? `Recommend: ${review.recommendation}` : null,
+    ...(review.madeMeFeel ?? []).map((mood) => `Felt ${mood}`),
+  ].filter((value): value is string => Boolean(value));
+  return entries.length ? (
+    <div className="mt-5 flex flex-wrap gap-2">
+      {entries.map((entry) => (
+        <span
+          key={entry}
+          className="rounded-full border border-primary/15 bg-blush/25 px-3 py-1 text-xs font-medium text-foreground"
+        >
+          {entry}
+        </span>
+      ))}
+    </div>
+  ) : null;
+}
+
+function StarRating({ rating }: { rating: number | null }) {
+  return rating ? (
+    <div className="flex items-center gap-1 text-primary" aria-label={`${rating} out of 5 stars`}>
+      {[1, 2, 3, 4, 5].map((star) => (
+        <Star
+          key={star}
+          className="h-4 w-4"
+          fill={star <= rating ? "currentColor" : "none"}
+          aria-hidden="true"
+        />
+      ))}
+      <span className="ml-1 text-xs font-medium text-muted-foreground">{rating}/5</span>
+    </div>
+  ) : null;
+}
+
 function ChoiceScale({
   value,
   onChange,
@@ -123,6 +204,8 @@ export function ReviewShowcase({ loginRedirect = "/reviews" }: { loginRedirect?:
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
   const [comment, setComment] = useState("");
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [revealedSpoilers, setRevealedSpoilers] = useState<Set<string>>(() => new Set());
   const items = reviews.data ?? [];
   const selected = items[active] as PublishedReview | undefined;
   const addComment = useMutation({
@@ -165,6 +248,9 @@ export function ReviewShowcase({ loginRedirect = "/reviews" }: { loginRedirect?:
   function move(direction: number) {
     setActive((index) => (index + direction + items.length) % items.length);
   }
+  const spoilersRevealed = revealedSpoilers.has(selected.id);
+  const revealSpoilers = () => setRevealedSpoilers((current) => new Set(current).add(selected.id));
+  const needsExpansion = reviewNeedsExpansion(selected);
 
   return (
     <div
@@ -176,9 +262,9 @@ export function ReviewShowcase({ loginRedirect = "/reviews" }: { loginRedirect?:
     >
       <Card
         key={selected.id}
-        className="review-rotator__card min-h-[30rem] rounded-4xl border-border/60 bg-card/80 shadow-soft"
+        className="review-rotator__card min-h-[28rem] rounded-4xl border-border/60 bg-card/80 shadow-soft"
       >
-        <CardContent className="flex min-h-[30rem] flex-col p-7 sm:p-10">
+        <CardContent className="flex min-h-[28rem] flex-col p-7 sm:p-10">
           <div className="flex items-start gap-4">
             {selected.bookCoverUrl ? (
               <img
@@ -189,7 +275,12 @@ export function ReviewShowcase({ loginRedirect = "/reviews" }: { loginRedirect?:
             ) : null}
             <div className="min-w-0 flex-1">
               <p className="eyebrow">{selected.bookTitle}</p>
-              <h3 className="mt-2 font-display text-2xl">{selected.title}</h3>
+              <h3 className="mt-2 font-display text-2xl">
+                {selected.bookAuthor ?? selected.title}
+              </h3>
+              <div className="mt-3">
+                <StarRating rating={selected.overallRating} />
+              </div>
               <div className="mt-4 flex items-center gap-3">
                 <Avatar className="h-11 w-11 border border-primary/20 shadow-soft">
                   {selected.author.avatarUrl ? (
@@ -210,9 +301,30 @@ export function ReviewShowcase({ loginRedirect = "/reviews" }: { loginRedirect?:
               </div>
             </div>
           </div>
-          <p className="mt-7 line-clamp-8 whitespace-pre-wrap text-sm leading-7 text-muted-foreground">
-            {selected.body}
-          </p>
+          <ReviewPills review={selected} />
+          {selected.containsSpoilers && !spoilersRevealed ? (
+            <div className="mt-6 rounded-2xl border border-primary/25 bg-blush/30 p-4 text-sm leading-6">
+              <p className="font-medium">Spoiler warning</p>
+              <p className="mt-1 text-muted-foreground">This review discusses key plot details.</p>
+              <Button size="sm" variant="outline" className="mt-3" onClick={revealSpoilers}>
+                Reveal review
+              </Button>
+            </div>
+          ) : (
+            <p
+              className={cn(
+                "mt-6 whitespace-pre-wrap text-sm leading-7 text-muted-foreground",
+                needsExpansion && "line-clamp-5",
+              )}
+            >
+              {reviewText(selected)}
+            </p>
+          )}
+          {needsExpansion ? (
+            <Button variant="link" className="mt-2 w-fit px-0" onClick={() => setDetailOpen(true)}>
+              Read full review
+            </Button>
+          ) : null}
           <div className="mt-auto border-t border-border/60 pt-6">
             <p className="text-sm font-medium">Conversation · {selected.comments.length}</p>
             {selected.comments.length ? (
@@ -280,7 +392,114 @@ export function ReviewShowcase({ loginRedirect = "/reviews" }: { loginRedirect?:
           </Button>
         </div>
       ) : null}
+      <Dialog open={detailOpen} onOpenChange={setDetailOpen}>
+        <DialogContent className="max-h-[100dvh] max-w-none overflow-y-auto rounded-none px-5 pb-8 pt-12 sm:max-h-[88dvh] sm:max-w-3xl sm:rounded-3xl sm:p-8">
+          <DialogHeader>
+            <DialogTitle className="pr-10 font-display text-3xl">{selected.bookTitle}</DialogTitle>
+            <DialogDescription>
+              {selected.bookAuthor ?? "Member reading journal"} · {selected.author.firstName}{" "}
+              {selected.author.lastName}
+            </DialogDescription>
+          </DialogHeader>
+          <StarRating rating={selected.overallRating} />
+          <ReviewPills review={selected} />
+          {selected.containsSpoilers && !spoilersRevealed ? (
+            <div className="rounded-2xl border border-primary/25 bg-blush/30 p-4 text-sm">
+              <p className="font-medium">Spoiler warning</p>
+              <Button size="sm" variant="outline" className="mt-3" onClick={revealSpoilers}>
+                Reveal review
+              </Button>
+            </div>
+          ) : (
+            <>
+              <div>
+                <h4 className="font-medium">Thoughts</h4>
+                <p className="mt-3 whitespace-pre-wrap leading-7 text-muted-foreground">
+                  {reviewText(selected)}
+                </p>
+              </div>
+              {selected.favouriteQuotes ? (
+                <div className="rounded-2xl bg-accent/55 p-5">
+                  <h4 className="font-medium">Favourite quotes</h4>
+                  <p className="mt-3 whitespace-pre-wrap leading-7 text-muted-foreground">
+                    {selected.favouriteQuotes}
+                  </p>
+                </div>
+              ) : null}
+            </>
+          )}
+          <ReviewConversation
+            review={selected}
+            isAuthenticated={isAuthenticated}
+            comment={comment}
+            setComment={setComment}
+            pending={addComment.isPending}
+            onSubmit={() => {
+              if (comment.trim()) addComment.mutate();
+            }}
+          />
+          <Button variant="outline" onClick={() => setDetailOpen(false)}>
+            Show less
+          </Button>
+        </DialogContent>
+      </Dialog>
     </div>
+  );
+}
+
+function ReviewConversation({
+  review,
+  isAuthenticated,
+  comment,
+  setComment,
+  pending,
+  onSubmit,
+}: {
+  review: PublishedReview;
+  isAuthenticated: boolean;
+  comment: string;
+  setComment: (value: string) => void;
+  pending: boolean;
+  onSubmit: () => void;
+}) {
+  return (
+    <section className="border-t border-border/60 pt-6">
+      <p className="text-sm font-medium">Conversation · {review.comments.length}</p>
+      {review.comments.length ? (
+        <div className="mt-3 space-y-2">
+          {review.comments.map((item) => (
+            <div key={item.id} className="rounded-2xl bg-accent/50 px-4 py-3 text-sm">
+              <span className="font-medium">{item.author.firstName}</span>{" "}
+              <span className="text-muted-foreground">{item.body}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Be the first member to continue the conversation.
+        </p>
+      )}
+      {isAuthenticated ? (
+        <form
+          className="mt-4 flex gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            onSubmit();
+          }}
+        >
+          <Input
+            value={comment}
+            onChange={(event) => setComment(event.target.value)}
+            maxLength={2000}
+            placeholder="Add a kind, thoughtful comment…"
+            aria-label="Review comment"
+          />
+          <Button type="submit" variant="hero" disabled={!comment.trim() || pending}>
+            {pending ? "Posting…" : "Post"}
+          </Button>
+        </form>
+      ) : null}
+    </section>
   );
 }
 

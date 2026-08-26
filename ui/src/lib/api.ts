@@ -13,6 +13,7 @@ export interface User {
   role: Role;
   emailVerified: boolean;
   approved: boolean;
+  blocked: boolean;
   region?: string;
 }
 
@@ -51,6 +52,7 @@ type UserRow = {
   role: Role;
   email_verified: boolean;
   approved: boolean;
+  blocked: boolean;
   region: string | null;
 };
 
@@ -83,6 +85,7 @@ function mapUser(row: UserRow): User {
     role: row.role,
     emailVerified: row.email_verified,
     approved: row.approved,
+    blocked: row.blocked,
     ...(row.region ? { region: row.region } : {}),
   };
 }
@@ -90,7 +93,7 @@ function mapUser(row: UserRow): User {
 async function loadApplicationUser(userId: string): Promise<User> {
   const { data, error } = await supabase
     .from("users")
-    .select("id,email,first_name,last_name,role,email_verified,approved,region")
+    .select("id,email,first_name,last_name,role,email_verified,approved,blocked,region")
     .eq("auth_user_id", userId)
     .single();
   if (error || !data) throwApiError(error, "Your membership profile could not be loaded.");
@@ -137,9 +140,9 @@ export const authApi = {
       await supabase.auth.signOut();
       throw new ApiError("Please verify your email address before signing in.");
     }
-    if (!session.user.approved) {
+    if (session.user.blocked) {
       await supabase.auth.signOut();
-      throw new ApiError("Your membership application is still awaiting approval.");
+      throw new ApiError("This membership is blocked. Contact Wine & Chapters for help.");
     }
     return session;
   },
@@ -158,8 +161,8 @@ export const authApi = {
         },
       },
     });
-    if (error) throwApiError(error, "Unable to create your membership application.");
-    return { message: "Application received. Check your inbox to verify your email address." };
+    if (error) throwApiError(error, "Unable to create your membership account.");
+    return { message: "Account created. Check your inbox to verify your email address." };
   },
 
   async forgotPassword(email: string): Promise<{ message: string }> {
@@ -380,21 +383,25 @@ export const contributionApi = {
 export interface PaymentMethodSettings {
   onlinePaymentsEnabled: boolean;
   manualPaymentMessage: string;
+  fallbackEnabled: boolean;
 }
 
 const defaultPaymentMethodSettings: PaymentMethodSettings = {
   onlinePaymentsEnabled: false,
   manualPaymentMessage:
     "Online payments are currently unavailable. Please contact Wine & Chapters for banking details and payment instructions.",
+  fallbackEnabled: false,
 };
 
 function mapPaymentMethodSettings(row: {
   online_payments_enabled: boolean;
   manual_payment_message: string;
+  fallback_enabled: boolean;
 }): PaymentMethodSettings {
   return {
     onlinePaymentsEnabled: row.online_payments_enabled,
     manualPaymentMessage: row.manual_payment_message,
+    fallbackEnabled: row.fallback_enabled,
   };
 }
 
@@ -402,7 +409,7 @@ export const paymentSettingsApi = {
   async get(): Promise<PaymentMethodSettings> {
     const { data, error } = await supabase
       .from("payment_method_settings")
-      .select("online_payments_enabled,manual_payment_message")
+      .select("online_payments_enabled,manual_payment_message,fallback_enabled")
       .eq("singleton", true)
       .maybeSingle();
     if (error) throwApiError(error, "Payment options could not be loaded.");
@@ -430,33 +437,22 @@ export interface BookReviewInput {
 
 export const bookReviewsApi = {
   async publish(input: BookReviewInput): Promise<{ message: string }> {
-    const details = [
-      `Author: ${input.author}`,
-      `Genre: ${input.genre}`,
-      `Format: ${input.format}`,
-      input.pickedBy ? `Picked by: ${input.pickedBy}` : null,
-      input.startDate ? `Started: ${input.startDate}` : null,
-      input.endDate ? `Finished: ${input.endDate}` : null,
-      `Spice level: ${input.spiceLevel}/5`,
-      `Tear level: ${input.tearLevel}/5`,
-      `Made me feel: ${input.mood}`,
-      `Would recommend: ${input.recommend}`,
-    ].filter(Boolean);
-    const body = [
-      input.thoughts.trim(),
-      input.favoriteQuotes.trim() ? `Favourite quotes\n${input.favoriteQuotes.trim()}` : null,
-      `Review details\n${details.join("\n")}`,
-    ]
-      .filter(Boolean)
-      .join("\n\n");
-
     const { error } = await supabase.rpc("submit_book_review", {
       input_book_title: input.bookTitle.trim(),
       input_author: input.author.trim(),
       input_genre: input.genre.trim(),
       input_rating: input.rating,
-      input_body: body,
+      input_thoughts: input.thoughts.trim(),
       input_contains_spoilers: input.containsSpoilers,
+      input_format: input.format,
+      input_picked_by: input.pickedBy.trim() || null,
+      input_start_date: input.startDate || null,
+      input_end_date: input.endDate || null,
+      input_spice_level: input.spiceLevel,
+      input_tear_level: input.tearLevel,
+      input_made_me_feel: [input.mood],
+      input_favourite_quotes: input.favoriteQuotes.trim() || null,
+      input_recommendation: input.recommend,
     });
     if (error) throwApiError(error, "Your review could not be submitted.");
     return { message: "Review submitted for moderation. Thank you for sharing your chapter." };
@@ -478,6 +474,18 @@ export interface PublishedReview {
   bookTitle: string;
   bookAuthor: string | null;
   bookCoverUrl: string | null;
+  overallRating: number | null;
+  genre: string | null;
+  format: BookReviewInput["format"] | null;
+  pickedBy: string | null;
+  startDate: string | null;
+  endDate: string | null;
+  spiceLevel: number | null;
+  tearLevel: number | null;
+  madeMeFeel: string[] | null;
+  thoughts: string;
+  favouriteQuotes: string | null;
+  recommendation: BookReviewInput["recommend"] | null;
   author: { id: string; firstName: string; lastName: string; avatarUrl: string | null };
   comments: ReviewComment[];
 }
@@ -759,6 +767,10 @@ export interface AdminMember {
   role: Role;
   emailVerified: boolean;
   approved: boolean;
+  verified: boolean;
+  blocked: boolean;
+  status: "VERIFIED" | "UNVERIFIED" | "BLOCKED" | "REMOVED";
+  deletedAt: string | null;
   region: string | null;
   createdAt: string;
 }
@@ -786,6 +798,9 @@ export interface AdminOverview {
   stats: {
     members: number;
     approvedMembers: number;
+    activeMembers: number;
+    blockedMembers: number;
+    unverifiedMembers: number;
     subscribers: number;
     books: number;
     events: number;
@@ -808,6 +823,22 @@ export interface AdminContent {
     body: string;
     status: "PENDING" | "PUBLISHED" | "HIDDEN";
     bookTitle: string;
+    bookId: string;
+    bookAuthor: string | null;
+    overallRating: number | null;
+    genre: string | null;
+    format: BookReviewInput["format"] | null;
+    pickedBy: string | null;
+    startDate: string | null;
+    endDate: string | null;
+    spiceLevel: number | null;
+    tearLevel: number | null;
+    madeMeFeel: string[] | null;
+    thoughts: string;
+    favouriteQuotes: string | null;
+    recommendation: BookReviewInput["recommend"] | null;
+    containsSpoilers: boolean;
+    reviewerId: string;
     memberName: string;
     createdAt: string;
   }>;
@@ -858,10 +889,11 @@ export const adminApi = {
           singleton: true,
           online_payments_enabled: input.onlinePaymentsEnabled,
           manual_payment_message: manualPaymentMessage,
+          fallback_enabled: input.fallbackEnabled,
         },
         { onConflict: "singleton" },
       )
-      .select("online_payments_enabled,manual_payment_message")
+      .select("online_payments_enabled,manual_payment_message,fallback_enabled")
       .single();
     if (error || !data) throwApiError(error, "Payment settings could not be saved.");
     return mapPaymentMethodSettings(data);
@@ -913,6 +945,22 @@ export const adminApi = {
     });
     if (error || !data) throwApiError(error, "The member could not be updated.");
     return data as AdminMember;
+  },
+
+  async memberAction(
+    targetUserId: string,
+    action: "password-reset" | "resend-confirmation" | "block" | "unblock" | "remove",
+    confirmation?: "REMOVE",
+  ) {
+    const { data, error } = await supabase.functions.invoke<{
+      success: true;
+      action: string;
+      member: { id: string; role: Role; verified: boolean; blocked: boolean; status: string };
+    }>("admin-members", {
+      body: { targetUserId, action, ...(confirmation ? { confirmation } : {}) },
+    });
+    if (error || !data) return await throwFunctionError(error, "The member action failed.");
+    return data;
   },
 
   async broadcast(input: {

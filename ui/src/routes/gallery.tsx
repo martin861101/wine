@@ -104,7 +104,7 @@ function GalleryPage() {
           <div>
             <h2 className="font-display text-2xl">Come be part of the next one.</h2>
             <p className="mt-2 text-sm text-muted-foreground">
-              Meet the community at an upcoming gathering or start your membership application.
+              Meet the community at an upcoming gathering or create your member account.
             </p>
           </div>
           <div className="flex flex-wrap gap-3">

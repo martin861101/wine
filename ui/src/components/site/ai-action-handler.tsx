@@ -215,7 +215,7 @@ export function AIActionHandler() {
                   >
                     <X aria-hidden="true" />
                   </Button>
-                  <p className="eyebrow">Miss Books recommends</p>
+                  <p className="eyebrow">Bookie Smalls recommends</p>
                   <h2 className="mt-2 font-display text-xl leading-tight">
                     {bookAction.book.title}
                   </h2>

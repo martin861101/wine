@@ -10,7 +10,7 @@ export const site = {
   email: "hello@wineandchapters.co.za",
   instagram: "@wine_and_chapters_bookclub",
   instagramUrl: "https://instagram.com/wine_and_chapters_bookclub",
-  whatsapp: "Members receive a WhatsApp community invite after approval.",
+  whatsapp: "Verified members receive details about the WhatsApp community.",
   meetingCadence: "Last Saturday of every month",
 } as const;
 
@@ -63,14 +63,21 @@ export const testimonials = [
   },
   {
     quote:
-      "I joined for the books and stayed for the women. It's the one evening a month I protect fiercely.",
-    name: "Lerato D.",
-    image: null,
+      "It’s not just a book club. It’s a sisterhood and a community for all the girlies that love all things books.",
+    name: "Kelly",
+    image: "/img/testimonial/kelly.jpg",
   },
   {
-    quote: "Every meetup feels like it was planned for you personally. The detail is unmatched.",
-    name: "Chiara B.",
-    image: null,
+    quote:
+      "Joining the very first book club meetup has been one of my highlights of 2026. I’d lost my love for reading somewhere along the way, so rediscovering it has been so special. And while I’ve always loved wine 😉, Wine & Chapters has given me so much more than a reason to read again.\n\nI’ve met incredible women, built meaningful friendships and found a community I didn’t realise I was missing. There’s something so wholesome about this group, and I now look forward to our monthly meetups every time. 💕\n\nHere’s to more books, conversations, friendships and beautiful chapters ahead! 🥰🍷",
+    name: "Nadia",
+    image: "/img/testimonial/nadia.jpg",
+  },
+  {
+    quote:
+      "I’ve experienced it to be a really fun group with diverse interests. I love that it is not limited to books, but also includes movies, events, pets and whatever else crops up! Lovely community of diverse ladies.",
+    name: "Gaenor",
+    image: "/img/testimonial/gaenor.jpg",
   },
 ] as const;
 
@@ -99,8 +106,8 @@ export const faqs = [
     a: "We'd love you to, but nobody is turned away at the door. Come for the conversation — spoilers are always tagged.",
   },
   {
-    q: "How are members approved?",
-    a: "Applications are reviewed by the committee within 48 hours. We keep chapters intimate, so intake is capped each month.",
+    q: "How do I become a member?",
+    a: "Create an account and verify your email address. Your normal member access is available as soon as verification is complete.",
   },
   {
     q: "Where do meetups happen?",

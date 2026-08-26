@@ -70,7 +70,7 @@ test("migration uses application-user ownership, constraints, and private owner-
   assert.match(sql, /Conversation ownership cannot be changed/);
 });
 
-test("Edge Function creates once, scopes service queries, persists failure, and returns IDs", async () => {
+test("Edge Function creates once, scopes service queries, persists safe failure metadata, and returns IDs", async () => {
   const source = await readFile(functionUrl, "utf8");
   assert.equal(source.match(/\.from\("ai_conversations"\)\s*\n\s*\.insert/g)?.length, 1);
   assert.ok((source.match(/\.eq\("owner_id", ownerId\)/g)?.length ?? 0) >= 3);
@@ -78,10 +78,13 @@ test("Edge Function creates once, scopes service queries, persists failure, and 
   assert.ok((source.match(/\.eq\("ai_conversations\.owner_id", ownerId\)/g)?.length ?? 0) >= 2);
   assert.doesNotMatch(source, /body\.history|parseHistory/);
   assert.ok(source.indexOf('role: "user"') < source.indexOf("callGemini(apiKey"));
-  assert.match(source, /status: "failed", metadata: \{ failure: "inference" \}/);
+  assert.match(source, /status: "failed",\s*\n\s*metadata: \{/);
+  assert.match(source, /failureCategory: category/);
+  assert.match(source, /errorId,/);
+  assert.match(source, /retryable,/);
   assert.match(source, /conversationId,\s*\n\s*userMessageId:/);
   assert.match(source, /assistantMessageId:/);
-  assert.match(source, /executeTool\(name, call\.args/);
+  assert.match(source, /executeTool,/);
 });
 
 test("widget restores, reconciles persisted UUIDs, retries stably, and clears account state", async () => {

@@ -7,6 +7,7 @@ import {
   json,
 } from "../_shared/http.ts";
 import { requireMember } from "../_shared/supabase.ts";
+import { callGemini, type GeminiContent } from "./gemini.ts";
 import {
   buildModelContents,
   RECENT_MESSAGE_LIMIT,
@@ -19,14 +20,7 @@ import {
   type AIAction,
   type ToolContext,
 } from "./tools/registry.ts";
-
-type GeminiPart = {
-  text?: string;
-  functionCall?: { name?: string; args?: unknown };
-  functionResponse?: { name: string; response: Record<string, unknown> };
-};
-type GeminiContent = { role: "model" | "user"; parts: GeminiPart[] };
-type GeminiResponse = { candidates?: Array<{ content?: GeminiContent }> };
+import { runToolLoop } from "./tool-loop.ts";
 
 const systemInstruction = `You are Books, the Wine & Chapters website companion. You live inside a warm Johannesburg women's book club website.
 
@@ -49,55 +43,24 @@ function parseUuid(value: unknown, label: string): string {
   return value;
 }
 
-async function callGemini(
-  apiKey: string,
-  model: string,
-  contents: GeminiContent[],
-): Promise<GeminiContent> {
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey },
-      body: JSON.stringify({
-        system_instruction: { parts: [{ text: systemInstruction }] },
-        contents,
-        tools: [{ functionDeclarations }],
-        toolConfig: { functionCallingConfig: { mode: "AUTO" } },
-        generationConfig: { temperature: 0.55, maxOutputTokens: 650 },
-      }),
-      signal: AbortSignal.timeout(20_000),
-    },
-  );
-  if (!response.ok) {
-    const errorBody = await response.text();
-
-    console.error("Gemini request failed", response.status, errorBody);
-
-    if (response.status === 429) {
-      throw new HttpError("Books is busy dog-earing a page. Try again shortly.", 429);
-    }
-
-    throw new HttpError("Books could not answer right now.", 502);
-  }
-  const result = (await response.json()) as GeminiResponse;
-  const content = result.candidates?.[0]?.content;
-  if (!content?.parts?.length) throw new HttpError("Books returned an empty answer.", 502);
-  return content;
-}
-
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS")
     return new Response(null, { status: 204, headers: corsHeaders(request) });
   if (request.method !== "POST") return json(request, { message: "Method not allowed." }, 405);
 
   let persistedContext: { conversationId: string; userMessageId: string } | null = null;
+  let requestIdForLog: string | null = null;
+  let failureStage = "request";
+  let retryCount = 0;
+  let markPersistedFailure:
+    ((errorId: string, category: string, retryable: boolean) => Promise<void>) | null = null;
   try {
     assertTrustedOrigin(request);
     const { client, member } = await requireMember(request);
     const body = (await request.json()) as Record<string, unknown>;
     const message = cleanText(body.message, "Message", 1, 4000);
     const requestId = parseUuid(body.requestId, "Request ID");
+    requestIdForLog = requestId;
     const suppliedConversationId =
       body.conversationId == null ? null : parseUuid(body.conversationId, "Conversation ID");
     const ownerId = String(member.id);
@@ -183,12 +146,16 @@ Deno.serve(async (request) => {
       throw new HttpError("This message is already being processed.", 409);
     }
     if (userRow?.status === "failed") {
-      const retryCount = Number(
+      const priorRetryCount = Number(
         (userRow.metadata as Record<string, unknown> | null)?.retryCount ?? 0,
       );
+      retryCount = Number.isFinite(priorRetryCount) ? priorRetryCount + 1 : 1;
       const { data: retriedUser, error: retryError } = await client
         .from("ai_messages")
-        .update({ status: "pending", metadata: { retryCount: retryCount + 1 } })
+        .update({
+          status: "pending",
+          metadata: { retryCount, retryOf: String(userRow.id) },
+        })
         .eq("id", userRow.id)
         .eq("status", "failed")
         .select("id,role,content,sequence")
@@ -225,6 +192,33 @@ Deno.serve(async (request) => {
       sequence: Number(userRow.sequence),
     };
     persistedContext = { conversationId, userMessageId: currentUserMessage.id };
+    markPersistedFailure = async (errorId, category, retryable) => {
+      const { error: failureUpdateError } = await client
+        .from("ai_messages")
+        .update({
+          status: "failed",
+          metadata: {
+            failureStage,
+            failureCategory: category,
+            errorId,
+            retryable,
+            retryCount,
+          },
+        })
+        .eq("id", currentUserMessage.id)
+        .eq("status", "pending");
+      if (failureUpdateError) {
+        console.error("AI chat failure metadata could not be persisted.", {
+          requestId: requestIdForLog,
+          conversationId,
+          userMessageId: currentUserMessage.id,
+          errorType: failureUpdateError.name,
+          errorMessage: failureUpdateError.message,
+        });
+      }
+    };
+
+    failureStage = "history_load";
     const { data: priorRows, error: historyError } = await client
       .from("ai_messages")
       .select("id,role,content,sequence,ai_conversations!inner(owner_id)")
@@ -235,11 +229,10 @@ Deno.serve(async (request) => {
       .order("sequence", { ascending: false })
       .limit(RECENT_MESSAGE_LIMIT - 1);
     if (historyError) {
-      await client
-        .from("ai_messages")
-        .update({ status: "failed", metadata: { failure: "history" } })
-        .eq("id", userRow.id);
-      throw new HttpError("The conversation history could not be loaded.", 500);
+      throw new HttpError("The conversation history could not be loaded.", 500, {
+        retryable: true,
+        category: "history_load",
+      });
     }
     const priorMessages = (priorRows ?? []).map((item): PersistedMessage => ({
       id: String(item.id),
@@ -253,89 +246,134 @@ Deno.serve(async (request) => {
       member: { id: ownerId, role: String(member.role) },
       bookCache: new Map(),
     };
-    const actions: AIAction[] = [];
-    const toolNames = new Set<string>();
-    let reply = "";
+    failureStage = "provider_inference";
+    if (!apiKey) {
+      throw new HttpError("The AI service is not configured.", 503, {
+        retryable: false,
+        category: "provider_configuration",
+      });
+    }
+    const { reply, actions, toolNames } = await runToolLoop(
+      contents,
+      toolContext,
+      (nextContents, allowTools) =>
+        callGemini(apiKey, model, nextContents, {
+          allowTools,
+          functionDeclarations,
+          systemInstruction,
+        }),
+      executeTool,
+    );
 
-    try {
-      if (!apiKey) throw new HttpError("The AI service is not configured.", 503);
-      for (let round = 0; round < 4; round += 1) {
-        const content = await callGemini(apiKey, model, contents);
-        const text = content.parts
-          .map((part) => part.text ?? "")
-          .join("")
-          .trim();
-        const calls = content.parts.flatMap((part) =>
-          part.functionCall?.name ? [part.functionCall] : [],
-        );
-        if (!calls.length) {
-          reply = text;
-          break;
-        }
+    failureStage = "assistant_persistence";
+    const { data: insertedAssistant, error: assistantError } = await client
+      .from("ai_messages")
+      .insert({
+        conversation_id: conversationId,
+        role: "assistant",
+        content: reply,
+        status: "complete",
+        request_id: requestId,
+        metadata: { model, actions, toolNames },
+      })
+      .select("id")
+      .single();
+    let assistantMessageId = insertedAssistant ? String(insertedAssistant.id) : "";
+    let responseReply = reply;
+    let responseActions = actions;
+    let responseModel = model;
 
-        contents.push(content);
-        const responseParts: GeminiPart[] = [];
-        for (const call of calls.slice(0, 4)) {
-          const name = call.name ?? "unknown";
-          toolNames.add(name);
-          try {
-            const result = await executeTool(name, call.args ?? {}, toolContext);
-            if (result.action && actions.length < 6) actions.push(result.action);
-            responseParts.push({ functionResponse: { name, response: result.response } });
-          } catch (error) {
-            const message =
-              error instanceof HttpError ? error.message : "The action could not be completed.";
-            responseParts.push({
-              functionResponse: { name, response: { ok: false, error: message } },
-            });
-          }
-        }
-        contents.push({ role: "user", parts: responseParts });
-        if (text) reply = text;
-      }
-
-      if (!reply) {
-        if (actions.length) reply = "Done — a little website magic, just for you.";
-        else throw new HttpError("Books returned an empty answer.", 502);
-      }
-
-      const { data: assistantRow, error: assistantError } = await client
+    if (assistantError || !insertedAssistant) {
+      const { data: completedAssistant, error: completedAssistantError } = await client
         .from("ai_messages")
-        .insert({
-          conversation_id: conversationId,
-          role: "assistant",
-          content: reply,
-          status: "complete",
-          request_id: requestId,
-          metadata: { model, actions, toolNames: [...toolNames] },
-        })
-        .select("id")
-        .single();
-      if (assistantError || !assistantRow) {
-        throw new HttpError("The reply could not be saved.", 500);
+        .select("id,content,metadata,ai_conversations!inner(owner_id)")
+        .eq("conversation_id", conversationId)
+        .eq("request_id", requestId)
+        .eq("role", "assistant")
+        .eq("ai_conversations.owner_id", ownerId)
+        .maybeSingle();
+      if (completedAssistantError || !completedAssistant) {
+        throw new HttpError("The reply could not be saved.", 500, {
+          retryable: true,
+          category: "assistant_persistence",
+        });
       }
-      await client.from("ai_messages").update({ status: "complete" }).eq("id", userRow.id);
+      const completedMetadata =
+        completedAssistant.metadata && typeof completedAssistant.metadata === "object"
+          ? (completedAssistant.metadata as Record<string, unknown>)
+          : {};
+      assistantMessageId = String(completedAssistant.id);
+      responseReply = String(completedAssistant.content);
+      responseActions = Array.isArray(completedMetadata.actions)
+        ? (completedMetadata.actions as AIAction[])
+        : [];
+      responseModel = typeof completedMetadata.model === "string" ? completedMetadata.model : model;
+    }
 
-      return json(request, {
-        reply,
-        actions,
-        model,
+    const { error: completeUserError } = await client
+      .from("ai_messages")
+      .update({ status: "complete" })
+      .eq("id", userRow.id)
+      .neq("status", "complete");
+    if (completeUserError) {
+      console.error("AI chat user message completion update failed.", {
+        requestId,
         conversationId,
         userMessageId: String(userRow.id),
-        assistantMessageId: String(assistantRow.id),
+        assistantMessageId,
+        errorType: completeUserError.name,
+        errorMessage: completeUserError.message,
       });
-    } catch (error) {
-      await client
-        .from("ai_messages")
-        .update({ status: "failed", metadata: { failure: "inference" } })
-        .eq("id", userRow.id);
-      throw error;
     }
+
+    return json(request, {
+      reply: responseReply,
+      actions: responseActions,
+      model: responseModel,
+      conversationId,
+      userMessageId: String(userRow.id),
+      assistantMessageId,
+    });
   } catch (error) {
     if (persistedContext) {
+      const errorId = crypto.randomUUID();
       const status = error instanceof HttpError ? error.status : 500;
       const message = error instanceof HttpError ? error.message : "Something went wrong.";
-      return json(request, { message, ...persistedContext, retryable: true }, status);
+      const retryable = error instanceof HttpError ? error.retryable : true;
+      const category =
+        error instanceof HttpError ? (error.category ?? failureStage) : "unexpected_exception";
+      if (markPersistedFailure) {
+        try {
+          await markPersistedFailure(errorId, category, retryable);
+        } catch (metadataError) {
+          console.error("AI chat failure metadata update threw an exception.", {
+            requestId: requestIdForLog,
+            conversationId: persistedContext.conversationId,
+            userMessageId: persistedContext.userMessageId,
+            errorId,
+            errorType: metadataError instanceof Error ? metadataError.name : typeof metadataError,
+            errorMessage:
+              metadataError instanceof Error ? metadataError.message : String(metadataError),
+            errorStack: metadataError instanceof Error ? metadataError.stack : undefined,
+          });
+        }
+      }
+      console.error("AI chat request failed.", {
+        status,
+        requestId: requestIdForLog,
+        conversationId: persistedContext.conversationId,
+        userMessageId: persistedContext.userMessageId,
+        errorId,
+        failureStage,
+        failureCategory: category,
+        retryable,
+        errorType: error instanceof Error ? error.name : typeof error,
+        errorMessage: error instanceof Error ? error.message : String(error),
+        errorStack: error instanceof Error ? error.stack : undefined,
+        upstreamStatus: error instanceof HttpError ? error.upstreamStatus : undefined,
+        upstreamRequestId: error instanceof HttpError ? error.upstreamRequestId : undefined,
+      });
+      return json(request, { message, errorId, ...persistedContext, retryable }, status);
     }
     return handleError(request, error);
   }

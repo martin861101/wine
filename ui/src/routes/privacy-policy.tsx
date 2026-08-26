@@ -41,7 +41,7 @@ function PrivacyPolicyPage() {
         {
           title: "How we use information",
           paragraphs: [
-            "We use information to create and manage accounts, review membership applications, communicate with members, organise events, publish member content where you have chosen to share it, provide the reading-room assistant, and protect the website and community.",
+            "We use information to create and manage accounts, communicate with members, organise events, publish member content where you have chosen to share it, provide the reading-room assistant, and protect the website and community.",
             "Wine & Chapters is a non-profit community. We do not sell personal information or use it to build advertising profiles for third parties.",
           ],
         },

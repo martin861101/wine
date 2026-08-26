@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Wine &amp; Chapters · Maintenance</title>
+<meta name="description" content="Wine &amp; Chapters — Maintenance underway. We will be right back." />
+<meta name="robots" content="noindex, nofollow" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400..700;1,400..700&family=Inter:wght@400..700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    --radius: 0.75rem;
+    --radius-2xl: calc(var(--radius) + 8px);
+    --radius-3xl: calc(var(--radius) + 12px);
+    --radius-4xl: calc(var(--radius) + 16px);
+    --background: oklch(0.985 0.012 68);
+    --foreground: oklch(0.26 0.022 32);
+    --card: oklch(0.997 0.006 78);
+    --muted-foreground: oklch(0.49 0.027 35);
+    --primary: oklch(0.69 0.125 17);
+    --primary-foreground: oklch(0.99 0.008 75);
+    --border: oklch(0.89 0.028 50);
+    --blush: oklch(0.9 0.065 18);
+    --cream: oklch(0.985 0.014 78);
+    --beige: oklch(0.925 0.035 70);
+    --sage: oklch(0.78 0.045 105);
+    --wine: oklch(0.48 0.09 20);
+    --gold: oklch(0.76 0.09 78);
+    --ring: oklch(0.69 0.125 17);
+    --shadow-soft: 0 1px 3px oklch(0.26 0.022 32 / 0.05), 0 10px 28px -14px oklch(0.69 0.125 17 / 0.12), 0 2px 10px -4px oklch(0.26 0.022 32 / 0.04);
+    --shadow-lift: 0 2px 8px oklch(0.26 0.022 32 / 0.06), 0 20px 44px -18px oklch(0.69 0.125 17 / 0.18);
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    min-height:100vh;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    color: var(--foreground);
+    background: var(--background);
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+    overflow-x:hidden;
+    display:flex;
+    flex-direction:column;
+  }
+  .font-display{font-family:"Playfair Display", ui-serif, Georgia, serif; letter-spacing:-0.02em}
+  /* Header — logo at top */
+  .fallback-header{
+    position:relative;
+    z-index:2;
+    width:100%;
+    max-width:72rem;
+    margin:0 auto;
+    padding:1.25rem 1.25rem 0;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  @media(min-width:640px){ .fallback-header{padding:1.75rem 2rem 0} }
+  .fallback-header__brand{
+    display:inline-flex;
+    align-items:center;
+    gap:0.75rem;
+    text-decoration:none;
+    color:inherit;
+  }
+  .fallback-header__logo{
+    width:2.75rem;height:2.75rem;
+    border-radius:999px;
+    object-fit:contain;
+    border:1px solid color-mix(in oklab, var(--border) 70%, transparent);
+    background: var(--card);
+    box-shadow: var(--shadow-soft);
+  }
+  .fallback-header__wordmark{
+    font-family:"Playfair Display", ui-serif, Georgia, serif;
+    font-size:1.15rem;
+    font-weight:600;
+    letter-spacing:-0.025em;
+    line-height:1;
+  }
+  .fallback-header__wordmark span{font-style:italic; font-weight:500; color: var(--primary)}
+  /* Main page background — editorial blush watercolor */
+  .fallback-main{
+    position:relative;
+    isolation:isolate;
+    flex:1;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    padding:1.5rem 1.25rem 2.5rem;
+    overflow:clip;
+  }
+  @media(min-width:640px){ .fallback-main{padding:2rem 2rem 3rem} }
+  .fallback-main::before{
+    content:"";
+    position:absolute;
+    inset:0;
+    z-index:-1;
+    background:
+      radial-gradient(circle at 16% 18%, oklch(0.98 0.018 35 / 0.72), transparent 30%),
+      radial-gradient(circle at 82% 78%, oklch(0.83 0.09 14 / 0.18), transparent 36%),
+      linear-gradient(135deg, oklch(0.985 0.014 78), oklch(0.925 0.035 70) 52%, oklch(0.9 0.065 18 / 0.22));
+  }
+  .fallback-card{
+    width:min(100%, 42rem);
+    background: color-mix(in oklab, var(--card) 88%, transparent);
+    border:1px solid color-mix(in oklab, var(--border) 65%, transparent);
+    border-radius: var(--radius-4xl);
+    box-shadow: var(--shadow-lift);
+    overflow:hidden;
+    backdrop-filter: blur(10px) saturate(130%);
+    animation: fallback-enter 0.9s var(--ease-out) both;
+  }
+  @keyframes fallback-enter{
+    from{opacity:0; transform:translateY(14px)}
+    to{opacity:1; transform:translateY(0)}
+  }
+  /* Bookie artwork — the hero of the fallback */
+  .fallback-artwork{
+    position:relative;
+    margin:0;
+    background: linear-gradient(180deg, color-mix(in oklab, var(--cream) 90%, white), color-mix(in oklab, var(--beige) 72%, var(--cream)));
+    border-bottom:1px solid color-mix(in oklab, var(--border) 60%, transparent);
+    overflow:hidden;
+  }
+  .fallback-artwork img{
+    display:block;
+    width:100%;
+    height:auto;
+    max-height:22rem;
+    object-fit:contain;
+    object-position:center bottom;
+    padding:0.75rem 0.75rem 0;
+  }
+  @media(min-width:640px){
+    .fallback-artwork img{max-height:24rem; padding:1rem 1rem 0}
+  }
+  .fallback-artwork__caption{
+    position:absolute;
+    right:0.75rem;
+    bottom:0.65rem;
+    z-index:1;
+    border:1px solid color-mix(in oklab, white 32%, transparent);
+    border-radius:999px;
+    padding:0.24rem 0.55rem;
+    background: color-mix(in oklab, var(--foreground) 58%, transparent);
+    color: var(--primary-foreground);
+    font-size:0.58rem;
+    font-weight:700;
+    letter-spacing:0.12em;
+    text-transform:uppercase;
+    backdrop-filter: blur(6px);
+  }
+  .fallback-body{
+    padding:1.75rem 1.5rem 1.75rem;
+    text-align:center;
+  }
+  @media(min-width:640px){ .fallback-body{padding:2.25rem 2.5rem 2rem} }
+  .fallback-eyebrow{
+    display:inline-flex;
+    align-items:center;
+    gap:0.6rem;
+    color: color-mix(in oklab, var(--primary) 78%, var(--foreground));
+    font-size:0.68rem;
+    font-weight:700;
+    letter-spacing:0.2em;
+    text-transform:uppercase;
+    line-height:1;
+  }
+  .fallback-eyebrow::before{
+    content:"";
+    width:1.75rem;height:1px;
+    background: currentColor;
+    opacity:0.55;
+  }
+  .fallback-title{
+    margin-top:0.9rem;
+    font-family:"Playfair Display", ui-serif, Georgia, serif;
+    font-size: clamp(1.9rem, 5vw, 2.6rem);
+    font-weight:600;
+    line-height:1.08;
+    letter-spacing:-0.03em;
+    text-wrap:balance;
+  }
+  .fallback-title em{
+    color: var(--primary);
+    font-weight:500;
+    font-style:italic;
+  }
+  .fallback-copy{
+    margin:0.9rem auto 0;
+    max-width:28rem;
+    color: var(--muted-foreground);
+    font-size:0.95rem;
+    line-height:1.65;
+    text-wrap:pretty;
+  }
+  .fallback-divider{
+    width:2.5rem;height:2px;
+    margin:1.5rem auto 0;
+    border-radius:999px;
+    background: linear-gradient(90deg, transparent, var(--gold), transparent);
+    opacity:0.9;
+  }
+  .fallback-note{
+    margin-top:1.25rem;
+    color: color-mix(in oklab, var(--muted-foreground) 88%, transparent);
+    font-size:0.78rem;
+    line-height:1.6;
+  }
+  .fallback-footer{
+    padding:1rem 1.25rem 1.5rem;
+    text-align:center;
+    color: color-mix(in oklab, var(--muted-foreground) 85%, transparent);
+    font-size:0.72rem;
+    letter-spacing:0.02em;
+  }
+  .fallback-footer a{
+    color: inherit;
+    text-underline-offset:3px;
+  }
+  .fallback-footer a:hover{color: var(--primary)}
+  @media(prefers-reduced-motion:reduce){
+    .fallback-card{animation:none}
+  }
+</style>
+</head>
+<body>
+  <header class="fallback-header" aria-label="Site header">
+    <a class="fallback-header__brand" href="/" aria-label="Wine &amp; Chapters — Home">
+      <img class="fallback-header__logo" src="/img/wine-chapters-logo.png" alt="Wine &amp; Chapters logo" width="44" height="44" decoding="async" />
+      <span class="fallback-header__wordmark font-display">Wine <span>&amp; Chapters</span></span>
+    </a>
+  </header>
+
+  <main class="fallback-main">
+    <section class="fallback-card" aria-labelledby="fallback-title">
+      <figure class="fallback-artwork">
+        <picture>
+          <source srcset="/img/missbooks.webp" type="image/webp" />
+          <img src="/img/missbooks.png" alt="Bookie Smalls, the Wine and Chapters AI companion, waving beside books and a glass of wine" width="1536" height="1024" decoding="async" fetchpriority="high" />
+        </picture>
+        <figcaption class="fallback-artwork__caption">Bookie Smalls</figcaption>
+      </figure>
+      <div class="fallback-body">
+        <p class="fallback-eyebrow">We’ll be right back</p>
+        <h1 id="fallback-title" class="fallback-title">Maintenance <em>underway…</em><br/>We will be right back.</h1>
+        <p class="fallback-copy">We’re giving the shelves a quick tidy. Wine &amp; Chapters will be back in a moment — Bookie Smalls is keeping your page.</p>
+        <div class="fallback-divider" aria-hidden="true"></div>
+        <p class="fallback-note">If you need us, reach us at <a href="mailto:hello@wineandchapters.co.za">hello@wineandchapters.co.za</a></p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="fallback-footer">
+    © <span id="fallback-year"></span> Wine &amp; Chapters · Johannesburg, South Africa
+  </footer>
+
+<script>
+  document.getElementById('fallback-year').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

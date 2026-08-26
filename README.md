@@ -26,7 +26,9 @@ Wine & Chapters is the web home of a community-led book club. The public site in
 
 - **Public experience:** current reads, an interactive upcoming-events calendar, early review participation, member perspectives, the club story, a Shop preview, contact, and newsletter signup.
 - **Member clubhouse:** book suggestions, voting, discussions, reviews, event RSVPs, community activity, and an AI reading companion.
-- **Admin workspace:** a responsive sidebar dashboard for member approval, book and event management, moderation, current-read selection, broadcasts, subscribers, and payment settings.
+- **Admin workspace:** a responsive sidebar dashboard for member status and protected Auth operations, book and event management, moderation, current-read selection, broadcasts, subscribers, payment settings, and public fallback mode.
+- **Structured review publishing:** ratings, book details, reading dates, format, spice/tear levels, feelings, thoughts, quotes, recommendations, spoiler state, and reviewer attribution remain queryable through moderation and publication.
+- **Published review journal:** compact spoiler-safe review cards open into keyboard-accessible full details with review metadata, quotes, and member conversation. Member administration uses protected action menus for reset, confirmation, access, and removal workflows.
 - **Admin media and moderation:** book-review covers are uploaded to the admin-only `review-images` Storage bucket (external legacy cover URLs still work), and Reading Room posts can be soft-removed or restored without deleting their comments.
 - **Book discovery:** Open Library metadata, Tavily-powered current research, and a safe server-side webpage reader.
 - **Books AI memory and actions:** owner-isolated Supabase conversations survive refresh/reopen, while a validated tool registry lets Gemini combine persisted context with live club data, book research, safe navigation, themed previews, and member-facing actions.
@@ -113,7 +115,7 @@ Never expose a service-role key, database password, SMTP password, Gemini key, o
 
 ### Payment method settings
 
-Administrators can enable or disable online payments in the dashboard and provide a manual-payment message for members. This setting is public-readable only so the browser can select the appropriate payment method; writes are enforced by Supabase RLS for approved administrators. The checkout Edge Function independently checks the setting and fails closed when online payments are disabled, while existing payment verification and webhook processing continue unchanged. Keep provider secrets, API keys, and passwords out of the manual message.
+Administrators can enable or disable online payments, provide a manual-payment message, and switch public routes to the root `fallback.html`. These settings are public-readable only so the browser can select the appropriate state; writes are enforced by Supabase RLS for trusted administrators. Admin and Auth callback routes remain available while fallback mode is on. The checkout Edge Function independently checks the payment setting and fails closed when online payments are disabled. Keep provider secrets, API keys, and passwords out of the manual message.
 
 ## Useful commands
 
@@ -132,7 +134,7 @@ Administrators can enable or disable online payments in the dashboard and provid
 
 ### Supabase migration notes
 
-Apply the pending migrations before deploying the UI. The review-cover migration creates the public `review-images` bucket with an 8 MB JPG/PNG/WebP/GIF limit and admin-only write/delete policies. It also adds soft-delete metadata to Reading Room posts, filters member post/comment reads, and adds the admin-only `admin_moderate_discussion` RPC used by the dashboard.
+Apply pending migrations before deploying the UI. Migration `20260826120000_reviews_members_admin_auth.sql` adds structured review storage, automatic verified-member access, block/removal status, review RLS hardening, admin Auth auditing, and fallback mode. Deploy `admin-members` with the other Edge Functions. See [Review and member admin backend](docs/REVIEW_MEMBER_ADMIN_BACKEND.md) for its request/response contract and rollout checks.
 
 ### Frontend
 
@@ -184,7 +186,10 @@ The production UI must use `VITE_SUPABASE_URL=https://ykyzelgoeblxhcdguyww.supab
 
 Books uses `TAVILY_API_KEY` only inside `ai-chat` for current web discovery. Open Library search and metadata do not require an API key. The browser receives normalized results and never receives either Gemini or Tavily credentials.
 
-The `ai-chat` function records Gemini failure statuses and provider error bodies in server-side logs for diagnostics; API keys and other configured secrets are never logged.
+The `ai-chat` function assigns unexpected failures an `errorId`, records structured server-side diagnostics, and stores only safe failure metadata on the persisted user message. Gemini calls have a 20-second timeout and typed rate-limit, authentication, network, malformed-response, and upstream-failure mappings. Prompts, tool arguments, authorization data, API keys, and full provider response bodies are never logged. Retrying with the original request UUID reuses the failed user-message row instead of creating a duplicate.
+
+Gateway JWT verification is intentionally disabled for `ai-chat`; the function still validates the bearer token with Supabase Auth and requires a verified, active application member before it reads conversations or executes tools. This is why the gateway invocation summary can show `auth_user: null` without making the function anonymous.
+
 Its model-facing function declarations use Gemini-compatible schema fields, while tool arguments remain independently validated by the server before execution.
 
 ## Documentation
@@ -193,6 +198,7 @@ Its model-facing function declarations use Gemini-compatible schema fields, whil
 - [Supabase backend and deployment](docs/SUPABASE_BACKEND.md)
 - [UI fixes implementation](docs/UI_FIXES_IMPLEMENTATION.md)
 - [Website review updates](docs/WEBSITE_REVIEW_UPDATES.md)
+- [Review publishing and admin member backend](docs/REVIEW_MEMBER_ADMIN_BACKEND.md)
 - [Homepage, Events, Gallery and Shop UI update](docs/UI_CHANGE_IMPLEMENTATION.md)
 - [Homepage backgrounds and Meet Miss Books](docs/HOMEPAGE_BACKGROUNDS_MISS_BOOKS.md)
 - [Review submission flow](docs/REVIEW_SUBMISSION.md)
@@ -201,6 +207,7 @@ Its model-facing function declarations use Gemini-compatible schema fields, whil
 - [Books AI tool and UI action layer](docs/BOOKS_AI_TOOLS.md)
 - [Books AI conversation-memory diagnosis](BOOKS_MEMORY_DIAGNOSIS.md)
 - [Books chat widget and persistent-memory flow](docs/CHAT_WIDGET.md)
+- [Published reviews and member-actions UI](docs/UI_REVIEWS_IMPLEMENTATION.md)
 - [Video integration](docs/VIDEO_INTEGRATION.md)
 
 ## Security

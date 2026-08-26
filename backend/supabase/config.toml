@@ -409,6 +409,12 @@ enabled = true
 verify_jwt = true
 entrypoint = "./functions/broadcast/index.ts"
 
+[functions.admin-members]
+enabled = true
+# The function verifies the bearer token with Auth and then loads the trusted DB role itself.
+verify_jwt = false
+entrypoint = "./functions/admin-members/index.ts"
+
 [functions.ai-chat]
 enabled = true
 verify_jwt = false
